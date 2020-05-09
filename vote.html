@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<head>
+    <title>RCVS − Loading…</title>
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <style type="text/css">
+        #graph-frame {
+            width: 800px;
+            height: 600px;
+            border: 1px solid lightgray;
+        }
+    </style>
+</head>
+<body>
+    <script>
+        var electionData;
+        var electionDataRequest = new XMLHttpRequest();
+        electionDataRequest.onreadystatechange = function() {
+            if (this.readyState === 4 && this.status === 200) {
+                electionData = JSON.parse(this.responseText);
+                document.getElementById("election-title").innerHTML =
+                    electionData.title;
+                document.title = electionData.title;
+                var enableJS = document.getElementById("enable-js");
+                enableJS.parentNode.removeChild(enableJS);
+                document.getElementById("how-it-works").style.display =
+                    "block";
+                initBallot(electionData.alternatives);
+            } else if (this.readyState === 4) {
+                document.getElementById("enable-js").innerHTML =
+                    "HTTP " + this.status + " − " + this.responseText;
+                document.title = "RCVS − Error " + this.status;
+            }
+        };
+        electionDataRequest.open("GET", "/api/", true);
+        electionDataRequest.send();
+    </script>
+    <div id="enable-js" style="color:red">
+        Please enable JavaScript to use this HTML interface.
+    </div>
+    <h1 id="election-title">Loading…</h1>
+    <p>
+        You are about to participate in a fantastic experiment about electoral
+        systems. This web app implements the Randomized Condorcet Voting System
+        (RCVS), which has the wonderful properties of remaining stable with
+        minor candidates and incentivizing honest (nonstrategical) voting.
+    </p>
+    <div id="how-it-works" style="display: none">
+        <h2>How does it work?</h2>
+        <p>
+            Below is the list of alternatives with two number fields for each.
+            You may specify one or both, in a way that gives a range of scores
+            for each alternative (<i>e.g.</i> alternative <i>A</i> has a score
+            between 3 and 5). Pairwise comparisons between alternatives are
+            computed as follows:
+            <ul>
+                <li>
+                    alternatives with no score specified are unranked and never
+                    win nor lose against anyone else;
+                </li>
+                <li>
+                    alternatives with overlapping ranges are deemed
+                    uncomparable;
+                </li>
+                <li>
+                    if <i>A</i>’s lower score is greater than <i>B</i>’s higher
+                    score, then the elector is said to prefer <i>A</i> over
+                    <i>B</i>.
+                </li>
+            </ul>
+            Exaggerating scores does not favor anyone (<i>e.g.</i> giving a
+            rank of 1,000,000 to <i>A</i> and 0 to everyone else is no
+            different from simply giving 1 to <i>A</i>). The ballot’s only
+            effective information is a set of “prefers-over” binary relations.
+            As you modify your ballot, a graph updates to show those binary
+            relations. Once you are set, simply click the “Send” button and let
+            the server do its magic. The “Reload” button reloads your ballot if
+            you already voted. You may modify or delete your ballot for as long
+            as the election is open.
+        </p>
+        <p>
+            You may also use this app through a REST API. For now,
+            authentication is done with IP addresses only.
+        </p>
+
+        <h2>Ballot graph</h2>
+        <!--
+            TODO: switch to something better like graphviz,
+            this makes horrendous-looking graphs
+        -->
+        <div id="graph-frame"></div>
+        <script>
+            var nodes;
+            var arrows;
+            var data = {
+                nodes: nodes,
+                edges: arrows
+            };
+            var options = {
+                edges: {
+                    arrows: "to"
+                }
+            };
+            var network = new vis.Network(
+                document.getElementById("graph-frame"),
+                data,
+                options
+            );
+        </script>
+
+        <h2>Ballot information</h2>
+        <div id="ballot-errors" style="color: red">&nbsp;</div>
+        <table id="ballot-tab"></table>
+        <script>
+            var alternativeTable = document.getElementById("ballot-tab");
+
+            function checkBallot() {
+                var shouldUpdate = true;
+                var arcs = [];
+                for (a = 0; a < electionData.alternatives.length; a++) {
+                    var low = document.getElementById(
+                        electionData.alternatives[a].id + "-low"
+                    );
+                    var high = document.getElementById(
+                        electionData.alternatives[a].id + "-high"
+                    );
+                    var lowVal = low.valueAsNumber;
+                    var highVal = high.valueAsNumber;
+                    low.setCustomValidity("");
+                    high.setCustomValidity("");
+                    if (isNaN(lowVal) && isNaN(highVal)) {
+                        low.setAttribute("placeholder", "Unranked");
+                        high.setAttribute("placeholder", "Unranked");
+                    } else if (isNaN(lowVal)) {
+                        low.setAttribute("placeholder", highVal);
+                        lowVal = highVal;
+                    } else if (isNaN(highVal)) {
+                        high.setAttribute("placeholder", lowVal);
+                        highVal = lowVal;
+                    } else if (lowVal > highVal) {
+                        low.setCustomValidity(
+                            "Lower bound is bigger than higher bound."
+                        );
+                        high.setCustomValidity(
+                            "Lower bound is bigger than higher bound."
+                        );
+                        shouldUpdate = false;
+                    }
+                    if (!low.checkValidity() || !high.checkValidity()) {
+                        shouldUpdate = false;
+                    }
+                    if (shouldUpdate) {
+                        for (b = 0; b < electionData.alternatives.length; b++) {
+                            var otherLow = document.getElementById(
+                                electionData.alternatives[b].id + "-low"
+                            );
+                            var otherHigh = document.getElementById(
+                                electionData.alternatives[b].id + "-high"
+                            );
+                            var otherLowVal = otherLow.valueAsNumber;
+                            var otherHighVal = otherHigh.valueAsNumber;
+                            if (isNaN(otherLowVal)) {
+                                otherLowVal = otherHighVal;
+                            } else if (isNaN(otherHighVal)) {
+                                otherHighVal = otherLowVal;
+                            }
+                            if (!isNaN(lowVal) && !isNaN(otherLowVal)) {
+                                if (lowVal > otherHighVal) {
+                                    arcs.push({
+                                        from: a + 1,
+                                        to: b + 1
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+                arrows = new vis.DataSet(arcs);
+                network.setData({
+                    nodes: nodes,
+                    edges: arrows
+                });
+            }
+
+            function makeInput(id) {
+                var input = document.createElement("input");
+                input.setAttribute("id", id);
+                input.setAttribute("type", "number");
+                input.setAttribute("min", 0);
+                input.setAttribute("placeholder", "Unranked");
+                input.setAttribute("onchange", "checkBallot()");
+                return input;
+            }
+
+            function initBallot(alternatives) {
+                var vertices = [];
+                for (a = 0; a < alternatives.length; a++) {
+                    var row = document.createElement("tr");
+
+                    var iconCell = document.createElement("td");
+                    iconCell.innerHTML = alternatives[a].id;
+                    row.appendChild(iconCell);
+
+                    var nameCell = document.createElement("td");
+                    nameCell.innerHTML = alternatives[a].description;
+                    row.appendChild(nameCell);
+
+                    var lowCell = document.createElement("td");
+                    lowCell.appendChild(
+                        makeInput(alternatives[a].id + "-low")
+                    );
+                    row.appendChild(lowCell);
+
+                    var highCell = document.createElement("td");
+                    highCell.appendChild(
+                        makeInput(alternatives[a].id + "-high")
+                    );
+                    row.appendChild(highCell);
+
+                    alternativeTable.appendChild(row);
+
+                    vertices.push({
+                        id: a + 1,
+                        label: alternatives[a].description
+                    })
+                }
+                nodes = new vis.DataSet(vertices)
+                network.setData({
+                    nodes: nodes,
+                    edges: arrows
+                });
+                loadBallot();
+            }
+        </script>
+
+        <div id="send-status">&nbsp;</div>
+        <script>
+            var sendStatus = document.getElementById("send-status");
+
+            function loadBallot() {
+                var ballotDataRequest = new XMLHttpRequest();
+                ballotDataRequest.onreadystatechange = function() {
+                    if (this.readyState === 4 && this.status === 200) {
+                        sendStatus.style = "color: green";
+                        sendStatus.innerHTML = "Loaded already-sent ballot";
+                        var ballotData = JSON.parse(this.responseText);
+                        for (a = 0; a < electionData.alternatives.length; a++) {
+                            document.getElementById(electionData.alternatives[a].id + "-low").value = NaN;
+                            document.getElementById(electionData.alternatives[a].id + "-high").value = NaN;
+                        }
+                        for (a = 0; a < ballotData.length; a++) {
+                            document.getElementById(ballotData[a].alternative + "-low").value =
+                                ballotData[a].min;
+                            var high = document.getElementById(ballotData[a].alternative + "-high");
+                            if (ballotData[a].min !== ballotData[a].max) {
+                                high.value = ballotData[a].max;
+                            }
+                        }
+                        checkBallot();
+                    } else if (this.readyState === 4 && this.status === 404) {
+                        sendStatus.style = "color:green";
+                        sendStatus.innerHTML = "You have not yet voted";
+                        for (a = 0; a < electionData.alternatives.length; a++) {
+                            document.getElementById(electionData.alternatives[a].alternative + "-low").value = NaN;
+                            document.getElementById(electionData.alternatives[a].alternative + "-high").value = NaN;
+                        }
+                        checkBallot();
+                    } else if (this.readyState === 4) {
+                        sendStatus.style = "color: red";
+                        sendStatus.innerHTML =
+                            "HTTP " + this.status + " − " + this.responseText;
+                    }
+                }
+                ballotDataRequest.open("GET", "/api/ballot", true);
+                ballotDataRequest.send();
+            }
+
+            function sendBallot() {
+                var ballotData = [];
+                for (a = 0; a < electionData.alternatives.length; a++) {
+                    var low = document.getElementById(
+                        electionData.alternatives[a].id + "-low"
+                    );
+                    var high = document.getElementById(
+                        electionData.alternatives[a].id + "-high"
+                    );
+                    var lowVal = low.valueAsNumber;
+                    var highVal = high.valueAsNumber;
+                    if (!isNaN(lowVal) || !isNaN(highVal)) {
+                        if (isNaN(lowVal)) {
+                            lowVal = highVal;
+                        } else if (isNaN(highVal)) {
+                            highVal = lowVal;
+                        }
+                        ballotData.push({
+                            alternative: electionData.alternatives[a].id,
+                            min: lowVal,
+                            max: highVal
+                        });
+                    }
+                }
+                var ballotDataRequest = new XMLHttpRequest();
+                ballotDataRequest.onreadystatechange = function() {
+                    if (this.readyState === 4 && this.status === 200) {
+                        sendStatus.style = "color: green";
+                        sendStatus.innerHTML = "Successfully sent ballot"
+                    } else if (this.readyState === 4) {
+                        sendStatus.style = "color: red";
+                        sendStatus.innerHTML =
+                            "HTTP " + this.status + " − " + this.responseText;
+                        document.title = "RCVS − Error " + this.status;
+                    }
+                };
+                ballotDataRequest.open("POST", "/api/ballot", true);
+                ballotDataRequest.setRequestHeader(
+                    "Content-Type",
+                    "application/json"
+                );
+                ballotDataRequest.send(JSON.stringify(ballotData));
+            }
+        </script>
+        <div align="right">
+            <button id="send-button" onclick="sendBallot()">Send</button>
+            <button id="get-button" onclick="loadBallot()">Reload</button>
+        </div>
+    </div>
+</body>
