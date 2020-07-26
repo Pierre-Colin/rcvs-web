@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<head>
+    <title>RCVS − Loading…</title>
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <style type="text/css">
+        #graph-frame {
+            width: 800px;
+            height: 600px;
+            border: 1px solid lightgray;
+        }
+
+        table {
+            border-collapse: collapse;
+        }
+
+        table th, table td {
+            border: 1px solid darkgray;
+            padding: 0.5em;
+        }
+    </style>
+</head>
+<body>
+    <script>
+        var resultData;
+        var resultDataRequest = new XMLHttpRequest();
+        resultDataRequest.onreadystatechange = function() {
+            if (this.readyState === 4 && this.status === 200) {
+                resultData = JSON.parse(this.responseText);
+                document.getElementById("election-title").innerHTML =
+                    resultData.title;
+                document.title = resultData.title;
+                var enableJS = document.getElementById("enable-js");
+                enableJS.parentNode.removeChild(enableJS);
+                document.getElementById("how-it-works").style.display =
+                    "block";
+                initResult(resultData);
+            } else if (this.readyState === 4) {
+                document.getElementById("enable-js").innerHTML =
+                    "HTTP " + this.status + " − " + this.responseText;
+                document.title = "RCVS − Error " + this.status;
+            }
+        };
+        resultDataRequest.open("GET", "/api/result", true);
+        resultDataRequest.send();
+    </script>
+    <div id="enable-js" style="color:red">
+        Please enable JavaScript to use this HTML interface.
+    </div>
+    <h1 id="election-title">Loading…</h1>
+    <p>
+        You are viewing the results of the election. To vote, please proceed to
+        the <a href="/vote">ballot page</a>.
+    </p>
+    <div id="how-it-works" style="display: none">
+        <h2>Duel graph</h2>
+        <p>
+            Below is the duel graph of the election. The vertices depict the
+            alternatives to vote for. Each arrow between two alternatives
+            <i>A</i> and <i>B</i> means that more electors said they preferred
+            <i>A</i> over <i>B</i> than the opposite. The absence of arrows
+            means the alternatives are not comparable.
+        </p>
+
+        <!--
+            TODO: switch to something better like graphviz,
+            this makes horrendous-looking graphs
+        -->
+        <div id="graph-frame"></div>
+        <script>
+            var nodes;
+            var arrows;
+            var data = {
+                nodes: nodes,
+                edges: arrows
+            };
+            var options = {
+                edges: {
+                    arrows: "to"
+                }
+            };
+            var network = new vis.Network(
+                document.getElementById("graph-frame"),
+                data,
+                options
+            );
+
+            function initResult(response) {
+                var dataVertices = [];
+                for (a = 0; a < response.alternatives.length; a++) {
+                    dataVertices.push({
+                        id: a + 1,
+                        label: response.alternatives[a]
+                    });
+                }
+                var vertices = new vis.DataSet(dataVertices);
+
+                var dataArrows = [];
+                for (a = 0; a < response.arrows.length; a++) {
+                    dataArrows.push({
+                        from: response.arrows[a].from + 1,
+                        to: response.arrows[a].to + 1
+                    });
+                }
+                var arrows = new vis.DataSet(dataArrows);
+
+                network.setData({
+                    nodes: vertices,
+                    edges: arrows
+                });
+
+                if (typeof response.strategy === "string") {
+                    var warning = document.getElementById("mixed-strategy");
+                    warning.style = "color: orange";
+                } else {
+                    var strategyTable = document.getElementById("strategy-table");
+                    strategyTable.innerHTML = "";
+
+                    var headRow = document.createElement("tr");
+                    var headLeft = document.createElement("th");
+                    headLeft.innerHTML = "Alternative";
+                    headRow.appendChild(headLeft);
+                    var headRight = document.createElement("th");
+                    headRight.innerHTML = "Probability";
+                    headRow.appendChild(headRight);
+                    strategyTable.appendChild(headRow);
+
+                    for (let [alternative, p] of Object.entries(response.strategy)) {
+                        var row = document.createElement("tr");
+                        var alternativeCell = document.createElement("td");
+                        alternativeCell.innerHTML = alternative;
+                        row.appendChild(alternativeCell);
+                        var probabilityCell = document.createElement("td");
+                        probabilityCell.innerHTML = p;
+                        row.appendChild(probabilityCell);
+                        strategyTable.appendChild(row);
+                    }
+                }
+            }
+        </script>
+
+        <h2>Optimal strategy</h2>
+        <div id="mixed-strategy" style="display: none">
+            This section should not show.
+        </div>
+        <p>
+            Below is the optimal strategy that was computed for this election.
+            Picking the winner with this probability distribution will minimize
+            the number of electors wishing a different alternative had won.
+            If there pairwise equal alternatives, then this distribution may
+            not be unique. If the duel graph is not weakly connected, then it
+            is definitely not unique.
+        </p>
+        <table id="strategy-table">
+        </table>
+
+        <h2>Winner</h2>
+        <p>
+            TODO
+        </p>
+
+        <div id="send-status">&nbsp;</div>
+        <script>
+            var sendStatus = document.getElementById("send-status");
+
+            function reloadResult() {
+                console.log("Unimplemented");
+            }
+        </script>
+        <div align="right">
+            <button id="get-button" onclick="reloadResult()">Reload</button>
+        </div>
+    </div>
+</body>

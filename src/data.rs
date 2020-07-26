@@ -1,7 +1,14 @@
 use std::collections::HashMap;
 use std::iter::FromIterator;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct AlternativeData {
+    pub id: String,
+    pub description: String,
+    pub icon: String,
+}
 
 #[derive(Serialize, Debug, Clone)]
 #[serde(untagged)]
@@ -21,23 +28,24 @@ impl StrategyData {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct ResultData {
+    title: String,
     alternatives: Vec<String>,
-    arrows: Vec<HashMap<String, String>>,
+    arrows: Vec<HashMap<String, usize>>,
     strategy: Option<StrategyData>,
     winner: Option<String>,
 }
 
 impl ResultData {
-    pub fn from_election(election: &rcvs::Election<String>) -> Option<Self> {
+    pub fn from_election(title: &str, election: &rcvs::Election<String>) -> Option<Self> {
         let graph = election.get_duel_graph();
         let alternatives = graph.get_vertices().to_vec();
         let mut arrows = Vec::new();
-        for (f, from) in alternatives.iter().enumerate() {
-            for (t, to) in alternatives.iter().enumerate() {
+        for (f, _) in alternatives.iter().enumerate() {
+            for (t, _) in alternatives.iter().enumerate() {
                 if graph[(f, t)] {
                     let mut arrow = HashMap::new();
-                    arrow.insert(String::from("from"), String::from(from));
-                    arrow.insert(String::from("to"), String::from(to));
+                    arrow.insert(String::from("from"), f);
+                    arrow.insert(String::from("to"), t);
                     arrows.push(arrow);
                 }
             }
@@ -47,6 +55,7 @@ impl ResultData {
             Err(_) => None,
         };
         Some(Self {
+            title: String::from(title),
             alternatives: alternatives,
             arrows: arrows,
             strategy: strategy,

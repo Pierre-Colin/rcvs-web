@@ -11,16 +11,9 @@ use actix_files::NamedFile;
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use serde::{Deserialize, Serialize};
 
-mod result_data;
+mod data;
 
-use result_data::*;
-
-#[derive(Deserialize, Clone, Debug)]
-struct AlternativeData {
-    id: String,
-    description: String,
-    icon: String,
-}
+use data::*;
 
 #[derive(Deserialize, Clone, Debug)]
 struct ElectionData {
@@ -119,7 +112,7 @@ impl AppState {
 
         std::mem::drop(lock);
 
-        self.result = ResultData::from_election(&election);
+        self.result = ResultData::from_election(&self.election_data.title, &election);
         Ok(())
     }
 }
@@ -248,9 +241,8 @@ async fn result(state: SharedState) -> impl Responder {
         }
 
         std::mem::drop(lock);
-        std::mem::drop(state_lock);
 
-        return HttpResponse::Ok().json(ResultData::from_election(&election));
+        return HttpResponse::Ok().json(ResultData::from_election(&(*state_lock).election_data.title, &election));
     } else {
         let lock = match state.ballots.read() {
             Ok(l) => l,
@@ -268,7 +260,7 @@ async fn result(state: SharedState) -> impl Responder {
 
         std::mem::drop(lock);
 
-        return HttpResponse::Ok().json(ResultData::from_election(&election));
+        return HttpResponse::Ok().json(ResultData::from_election(&(*state_lock).election_data.title, &election));
     }
 }
 
@@ -322,8 +314,15 @@ async fn open(req: HttpRequest, state: SharedState) -> impl Responder {
     HttpResponse::Ok().finish()
 }
 
-async fn vote() -> actix_web::Result<NamedFile> {
+async fn vote_page() -> actix_web::Result<NamedFile> {
     let path: std::path::PathBuf = "vote.html".parse()?;
+    let file = NamedFile::open(path)?
+        .set_content_type("text/html; charset=utf-8".parse::<mime::Mime>().unwrap());
+    Ok(file)
+}
+
+async fn result_page() -> actix_web::Result<NamedFile> {
+    let path: std::path::PathBuf = "result.html".parse()?;
     let file = NamedFile::open(path)?
         .set_content_type("text/html; charset=utf-8".parse::<mime::Mime>().unwrap());
     Ok(file)
@@ -345,7 +344,8 @@ async fn main() -> std::io::Result<()> {
                     .route("/close", web::get().to(close))
                     .route("/open", web::get().to(open))
             )
-            .route("/vote", web::get().to(vote))
+            .route("/vote", web::get().to(vote_page))
+            .route("/result", web::get().to(result_page))
     })
     .bind("127.0.0.1:8080")?
     .run()
