@@ -30,19 +30,19 @@ struct BallotData {
 }
 
 #[derive(Clone, Debug)]
-enum BallotValidityError {
-    AlternativeNotFound(String),
+enum BallotValidityError<V> {
+    AlternativeNotFound(V),
     InvalidRankRange(u64, u64),
-    DuplicateAlternative(String),
+    DuplicateAlternative(V),
 }
 
-impl Error for BallotValidityError {
+impl<V: fmt::Debug + fmt::Display> Error for BallotValidityError<V> {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         None
     }
 }
 
-impl fmt::Display for BallotValidityError {
+impl<V: fmt::Display> fmt::Display for BallotValidityError<V> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::AlternativeNotFound(a) => write!(f, "{} is not a valid alternative", a),
@@ -53,7 +53,7 @@ impl fmt::Display for BallotValidityError {
 }
 
 impl BallotData {
-    fn check_errors(ballots: &[BallotData], alternatives: &[AlternativeData]) -> Result<(), BallotValidityError> {
+    fn check_errors(ballots: &[BallotData], alternatives: &[AlternativeData]) -> Result<(), BallotValidityError<String>> {
         for (i, ballot) in ballots.iter().enumerate() {
             if ballot.min > ballot.max {
                 return Err(BallotValidityError::InvalidRankRange(ballot.min, ballot.max));
@@ -145,12 +145,36 @@ async fn get_info(req: HttpRequest, state: SharedState) -> impl Responder {
     HttpResponse::Ok().json(data)
 }
 
+fn check_ballot_shape(ballot: &[model::BallotRow]) -> Result<(), BallotValidityError<usize>> {
+    let mut found = vec![false; ballot.len()];
+    for row in ballot {
+        match found.get(row.alternative - 1) {
+            Some(true) => return Err(
+                BallotValidityError::DuplicateAlternative(row.alternative)
+            ),
+            Some(false) => found[row.alternative - 1] = true,
+            None => {
+                found.resize(row.alternative, false);
+                found[row.alternative - 1] = true;
+            },
+        }
+        if row.min > row.max {
+            return Err(BallotValidityError::InvalidRankRange(row.min, row.max));
+        }
+    }
+    Ok(())
+}
+
 async fn post_ballot(req: HttpRequest, ballot: web::Json<Vec<model::BallotRow>>) -> impl Responder {
     let ip = match req.peer_addr() {
         Some(a) => a.ip(),
         None => return HttpResponse::InternalServerError()
             .body("Failed to retrieve client IP address"),
     };
+
+    if let Err(what) = check_ballot_shape(&ballot) {
+        return HttpResponse::BadRequest().body(&format!("Bad ballot format: {}", what));
+    }
 
     match model::set_ballot(&ip.to_string(), &ballot) {
         Ok(()) => HttpResponse::NoContent().finish(),
@@ -167,7 +191,8 @@ async fn delete_ballot(req: HttpRequest) -> impl Responder {
     };
 
     match model::delete_ballot(&ip.to_string()) {
-        Ok(()) => HttpResponse::NoContent().finish(),
+        Ok(true) => HttpResponse::NoContent().finish(),
+        Ok(false) => HttpResponse::NotFound().body("No ballot detected"),
         Err(what) => HttpResponse::InternalServerError()
             .body(&format!("Failed to delete ballot: {}", what)),
     }

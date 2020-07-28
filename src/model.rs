@@ -59,12 +59,12 @@ pub fn get_ballot(ip: &str) -> Result<Vec<BallotRow>, Box<dyn Error>> {
     Ok(ballot)
 }
 
-pub fn delete_ballot(ip: &str) -> Result<(), Box<dyn Error>> {
+pub fn delete_ballot(ip: &str) -> Result<bool, Box<dyn Error>> {
     let connection = connect("model.db", "model.sql")?;
 
-    connection.execute("DELETE FROM elector WHERE elecIp = ?1", params![ip])?;
+    let deleted = connection.execute("DELETE FROM elector WHERE elecIp = ?1", params![ip])?;
 
-    Ok(())
+    Ok(deleted != 0)
 }
 
 fn get_elector(ip: &str, connection: &Connection) -> Result<Option<i64>, Box<dyn Error>> {
