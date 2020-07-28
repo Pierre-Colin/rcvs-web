@@ -2,7 +2,7 @@ use std::error::Error;
 use std::fmt;
 use std::fs::File;
 use std::io::BufReader;
-use std::iter::FromIterator;
+// use std::iter::FromIterator;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::{Arc, RwLock};
@@ -12,6 +12,7 @@ use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use serde::{Deserialize, Serialize};
 
 mod data;
+mod model;
 
 use data::*;
 
@@ -75,7 +76,7 @@ struct AppState {
     election_data: ElectionData,
     open: bool,
     ballots: Arc<RwLock<HashMap<IpAddr, Vec<BallotData>>>>,
-    result: Option<ResultData>,
+    result: Option<ResultData<String>>,
 }
 
 impl AppState {
@@ -119,19 +120,17 @@ impl AppState {
 
 type SharedState = web::Data<Arc<RwLock<AppState>>>;
 
-async fn election() -> actix_web::Result<NamedFile> {
-    let path: std::path::PathBuf = "election.json".parse()?;
-    let file = NamedFile::open(path)?
-        .set_content_type(mime::APPLICATION_JSON)
-        .disable_content_disposition();
-    Ok(file)
-}
-
-async fn get_ballot(req: HttpRequest, state: SharedState) -> impl Responder {
+async fn get_info(req: HttpRequest, state: SharedState) -> impl Responder {
     let ip = match req.peer_addr() {
         Some(a) => a.ip(),
         None => return HttpResponse::InternalServerError()
             .body("Failed to retrieve client IP address"),
+    };
+
+    let mut data = match model::get_data(&ip.to_string()) {
+        Ok(data) => data,
+        Err(what) => return HttpResponse::InternalServerError()
+            .body(&format!("Failed to query data base: {}", what)),
     };
 
     let state_lock = match state.read() {
@@ -141,78 +140,60 @@ async fn get_ballot(req: HttpRequest, state: SharedState) -> impl Responder {
     };
     let state = &*state_lock;
 
-    let lock = match state.ballots.read() {
-        Ok(l) => l,
-        Err(what) => return HttpResponse::InternalServerError()
-            .body(&format!("Mutex poisoned: {}", what)),
-    };
-    match (*lock).get(&ip) {
-        Some(ballot) => HttpResponse::Ok().json(ballot),
-        None => HttpResponse::NotFound().json([0; 0]),
-    }
+    data.title = Some(state.election_data.title.to_string());
+
+    HttpResponse::Ok().json(data)
 }
 
-async fn post_ballot(req: HttpRequest, ballot: web::Json<Vec<BallotData>>, state: SharedState) -> impl Responder {
+async fn post_ballot(req: HttpRequest, ballot: web::Json<Vec<model::BallotRow>>) -> impl Responder {
     let ip = match req.peer_addr() {
         Some(a) => a.ip(),
         None => return HttpResponse::InternalServerError()
             .body("Failed to retrieve client IP address"),
     };
 
-    let state_lock = match state.read() {
-        Ok(l) => l,
-        Err(what) => return HttpResponse::InternalServerError()
-            .body(&format!("Mutex poisoned: {}", what)),
-    };
-    let state = &*state_lock;
-    if state.open {
-        match BallotData::check_errors(&ballot, &state.election_data.alternatives) {
-            Ok(()) => (),
-            Err(what) => return HttpResponse::BadRequest().body(&format!("{}", what)),
-        }
-
-        let mut lock = match state.ballots.write() {
-            Ok(l) => l,
-            Err(what) => return HttpResponse::InternalServerError()
-                .body(&format!("Mutex poisoned: {}", what)),
-        };
-        (*lock).insert(ip, ballot.to_vec());
-        HttpResponse::Ok().finish()
-    } else {
-        HttpResponse::Forbidden().body("Election is closed")
+    match model::set_ballot(&ip.to_string(), &ballot) {
+        Ok(()) => HttpResponse::NoContent().finish(),
+        Err(what) => HttpResponse::InternalServerError()
+            .body(&format!("Failed to post ballot: {}", what)),
     }
 }
 
-async fn delete_ballot(req: HttpRequest, state: SharedState) -> impl Responder {
+async fn delete_ballot(req: HttpRequest) -> impl Responder {
     let ip = match req.peer_addr() {
         Some(a) => a.ip(),
         None => return HttpResponse::InternalServerError()
             .body("Failed to retrieve client IP address"),
     };
 
-    let state_lock = match state.read() {
-        Ok(l) => l,
-        Err(what) => return HttpResponse::InternalServerError()
-            .body(&format!("Mutex poisoned: {}", what)),
-    };
-    let state = &*state_lock;
-
-    if state.open {
-        let mut lock = match state.ballots.write() {
-            Ok(l) => l,
-            Err(what) => return HttpResponse::InternalServerError()
-                .body(&format!("Mutex poisoned: {}", what)),
-        };
-        match (*lock).remove(&ip) {
-            Some(value) => HttpResponse::Ok().json(value),
-            None => HttpResponse::NotFound().finish(),
-        }
-    } else {
-        HttpResponse::Forbidden().body("Election is closed")
+    match model::delete_ballot(&ip.to_string()) {
+        Ok(()) => HttpResponse::NoContent().finish(),
+        Err(what) => HttpResponse::InternalServerError()
+            .body(&format!("Failed to delete ballot: {}", what)),
     }
 }
 
-async fn result(state: SharedState) -> impl Responder {
+async fn result() -> impl Responder {
+    let data = match model::collect_votes() {
+        Ok(data) => data,
+        Err(what) => return HttpResponse::InternalServerError()
+            .body(&format!("Failed to collect ballots: {}", what)),
+    };
+
+    let mut election = rcvs::Election::new();
+    for alternative in data.alternatives {
+        election.add_alternative(&(alternative.id as usize));
+    }
+    for ranking in data.ballot {
+        let mut ballot = rcvs::Ballot::new();
+        ballot.insert(ranking.alternative, ranking.min, ranking.max);
+        election.cast(ballot);
+    }
+
+    HttpResponse::Ok().json(ResultData::from_election("Foo", &election))
+}
+
+async fn result_old(state: SharedState) -> impl Responder {
     let state_lock = match state.read() {
         Ok(l) => l,
         Err(what) => return HttpResponse::InternalServerError()
@@ -336,13 +317,13 @@ async fn main() -> std::io::Result<()> {
             .data(app_state.clone())
             .service(
                 web::scope("/api")
-                    .route("/", web::get().to(election))
-                    .route("/ballot", web::get().to(get_ballot))
-                    .route("/ballot", web::post().to(post_ballot))
-                    .route("/ballot", web::delete().to(delete_ballot))
-                    .route("/result", web::get().to(result))
-                    .route("/close", web::get().to(close))
-                    .route("/open", web::get().to(open))
+                .route("/", web::get().to(get_info))
+                .route("/ballot", web::get().to(get_info))
+                .route("/ballot", web::post().to(post_ballot))
+                .route("/ballot", web::delete().to(delete_ballot))
+                .route("/result", web::get().to(result))
+                .route("/close", web::get().to(close))
+                .route("/open", web::get().to(open))
             )
             .route("/vote", web::get().to(vote_page))
             .route("/result", web::get().to(result_page))

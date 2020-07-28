@@ -11,29 +11,6 @@
     </style>
 </head>
 <body>
-    <script>
-        var electionData;
-        var electionDataRequest = new XMLHttpRequest();
-        electionDataRequest.onreadystatechange = function() {
-            if (this.readyState === 4 && this.status === 200) {
-                electionData = JSON.parse(this.responseText);
-                document.getElementById("election-title").innerHTML =
-                    electionData.title;
-                document.title = electionData.title;
-                var enableJS = document.getElementById("enable-js");
-                enableJS.parentNode.removeChild(enableJS);
-                document.getElementById("how-it-works").style.display =
-                    "block";
-                initBallot(electionData.alternatives);
-            } else if (this.readyState === 4) {
-                document.getElementById("enable-js").innerHTML =
-                    "HTTP " + this.status + " − " + this.responseText;
-                document.title = "RCVS − Error " + this.status;
-            }
-        };
-        electionDataRequest.open("GET", "/api/", true);
-        electionDataRequest.send();
-    </script>
     <div id="enable-js" style="color:red">
         Please enable JavaScript to use this HTML interface.
     </div>
@@ -89,10 +66,16 @@
         -->
         <div id="graph-frame"></div>
         <script>
-            var nodes;
+        </script>
+
+        <h2>Ballot information</h2>
+        <div id="ballot-errors" style="color: red">&nbsp;</div>
+        <table id="ballot-tab"></table>
+        <script>
+            var vertices;
             var arrows;
             var data = {
-                nodes: nodes,
+                nodes: vertices,
                 edges: arrows
             };
             var options = {
@@ -105,23 +88,16 @@
                 data,
                 options
             );
-        </script>
 
-        <h2>Ballot information</h2>
-        <div id="ballot-errors" style="color: red">&nbsp;</div>
-        <table id="ballot-tab"></table>
-        <script>
             var alternativeTable = document.getElementById("ballot-tab");
 
             function checkBallot() {
                 var shouldUpdate = true;
-                var arcs = [];
-                for (a = 0; a < electionData.alternatives.length; a++) {
-                    var low = document.getElementById(
-                        electionData.alternatives[a].id + "-low"
-                    );
+                var dataArrows = [];
+                for (let alternative of electionData.alternatives) {
+                    var low = document.getElementById(alternative.id + "-low");
                     var high = document.getElementById(
-                        electionData.alternatives[a].id + "-high"
+                        alternative.id + "-high"
                     );
                     var lowVal = low.valueAsNumber;
                     var highVal = high.valueAsNumber;
@@ -149,12 +125,12 @@
                         shouldUpdate = false;
                     }
                     if (shouldUpdate) {
-                        for (b = 0; b < electionData.alternatives.length; b++) {
+                        for (let other of electionData.alternatives) {
                             var otherLow = document.getElementById(
-                                electionData.alternatives[b].id + "-low"
+                                other.id + "-low"
                             );
                             var otherHigh = document.getElementById(
-                                electionData.alternatives[b].id + "-high"
+                                other.id + "-high"
                             );
                             var otherLowVal = otherLow.valueAsNumber;
                             var otherHighVal = otherHigh.valueAsNumber;
@@ -165,20 +141,22 @@
                             }
                             if (!isNaN(lowVal) && !isNaN(otherLowVal)) {
                                 if (lowVal > otherHighVal) {
-                                    arcs.push({
-                                        from: a + 1,
-                                        to: b + 1
+                                    dataArrows.push({
+                                        from: alternative.id,
+                                        to: other.id
                                     });
                                 }
                             }
                         }
                     }
                 }
-                arrows = new vis.DataSet(arcs);
-                network.setData({
-                    nodes: nodes,
-                    edges: arrows
-                });
+                if (shouldUpdate) {
+                    arrows = new vis.DataSet(dataArrows);
+                    network.setData({
+                        nodes: vertices,
+                        edges: arrows
+                    });
+                }
             }
 
             function makeInput(id) {
@@ -191,50 +169,103 @@
                 return input;
             }
 
-            function initBallot(alternatives) {
-                var vertices = [];
-                for (a = 0; a < alternatives.length; a++) {
+            function initializeBallot(alternatives, ballot) {
+                var dataVertices = [];
+                alternativeTable.innerHTML = "";
+                for (let alternative of alternatives) {
                     var row = document.createElement("tr");
 
                     var iconCell = document.createElement("td");
-                    iconCell.innerHTML = alternatives[a].id;
+                    iconCell.innerHTML = alternative.id;
                     row.appendChild(iconCell);
 
                     var nameCell = document.createElement("td");
-                    nameCell.innerHTML = alternatives[a].description;
+                    nameCell.innerHTML = alternative.description;
                     row.appendChild(nameCell);
 
                     var lowCell = document.createElement("td");
                     lowCell.appendChild(
-                        makeInput(alternatives[a].id + "-low")
+                        makeInput(alternative.id + "-low")
                     );
                     row.appendChild(lowCell);
 
                     var highCell = document.createElement("td");
                     highCell.appendChild(
-                        makeInput(alternatives[a].id + "-high")
+                        makeInput(alternative.id + "-high")
                     );
                     row.appendChild(highCell);
 
                     alternativeTable.appendChild(row);
 
-                    vertices.push({
-                        id: a + 1,
-                        label: alternatives[a].description
+                    dataVertices.push({
+                        id: alternative.id,
+                        label: alternative.name
                     })
                 }
-                nodes = new vis.DataSet(vertices)
+                vertices = new vis.DataSet(dataVertices);
+
+                var nonEmptyBallot = false;
+                for (let rank of ballot) {
+                    nonEmptyBallot = true;
+                    document.getElementById(rank.alternative + "-low").value =
+                        rank.min;
+                    var high = document.getElementById(rank.alternative + "-high");
+                    if (rank.min !== rank.max) {
+                        high.value = rank.max;
+                    }
+                }
+                if (nonEmptyBallot) {
+                    sendStatus.style = "color: green";
+                    sendStatus.innerHTML = "Loaded existing ballot";
+                }
+                checkBallot();
                 network.setData({
-                    nodes: nodes,
+                    nodes: vertices,
                     edges: arrows
                 });
-                loadBallot();
             }
         </script>
 
         <div id="send-status">&nbsp;</div>
         <script>
-            var sendStatus = document.getElementById("send-status");
+
+        </script>
+        <div align="right">
+            <button id="send-button" onclick="sendBallot()">Send</button>
+            <button id="get-button" onclick="initialize()">Reload</button>
+        </div>
+    </div>
+
+    <script>
+        var enableJS = document.getElementById("enable-js");
+        var electionData;
+        var electionTitle = document.getElementById("election-title");
+
+        function initialize() {
+            var electionDataRequest = new XMLHttpRequest();
+            electionDataRequest.onreadystatechange = function() {
+                if (this.readyState === 4 && this.status === 200) {
+                    electionData = JSON.parse(this.responseText);
+                    enableJS.style.visibility = "hidden";
+                    electionTitle.innerHTML = electionData.title;
+                    document.title = electionData.title;
+                    initializeBallot(electionData.alternatives, electionData.ballot);
+                    document.getElementById("how-it-works").style.display = "";
+                } else if (this.readyState === 4) {
+                    enableJS.innerHTML =
+                        "HTTP " + this.status + " − " + this.responseText;
+                    document.title = "RCVS − Error " + this.status;
+                }
+            };
+            electionDataRequest.open("GET", "/api/", true);
+            enableJS.innerHTML = "Loading data…";
+            enableJS.style.visibility = "visible";
+            document.title = "Loading data…";
+            electionDataRequest.send();
+        }
+
+        var sendButton = document.getElementById("send-button");
+        var sendStatus = document.getElementById("send-status");
 
             function loadBallot() {
                 var ballotDataRequest = new XMLHttpRequest();
@@ -275,6 +306,49 @@
             }
 
             function sendBallot() {
+                var ballot = [];
+                for (let alternative of electionData.alternatives) {
+                    var low = document.getElementById(alternative.id + "-low")
+                        .valueAsNumber;
+                    var high = document.getElementById(alternative.id + "-high")
+                        .valueAsNumber;
+                    if (!isNaN(low) || !isNaN(high)) {
+                        if (isNaN(low)) {
+                            low = high;
+                        } else if (isNaN(high)) {
+                            high = low;
+                        }
+                        ballot.push({
+                            alternative: alternative.id,
+                            min: low,
+                            max: high
+                        });
+                    }
+                }
+                sendButton.disabled = true;
+                var ballotDataRequest = new XMLHttpRequest();
+                ballotDataRequest.onreadystatechange = function() {
+                    if (this.readyState === 4 && this.status === 204) {
+                        sendButton.disabled = false;
+                        sendStatus.style = "color: green";
+                        sendStatus.innerHTML = "Successfully sent ballot";
+                    } else if (this.readyState === 4) {
+                        sendButton.disabled = false;
+                        sendStatus.style = "color: red";
+                        sendStatus.innerHTML =
+                            "HTTP " + this.status + " − " + this.responseText;
+                        document.title = "RCVS − Error " + this.status;
+                    }
+                };
+                ballotDataRequest.open("POST", "/api/ballot", true);
+                ballotDataRequest.setRequestHeader(
+                    "Content-Type",
+                    "application/json"
+                );
+                ballotDataRequest.send(JSON.stringify(ballot));
+            }
+
+            function sendBallotOld() {
                 var ballotData = [];
                 for (a = 0; a < electionData.alternatives.length; a++) {
                     var low = document.getElementById(
@@ -317,10 +391,7 @@
                 );
                 ballotDataRequest.send(JSON.stringify(ballotData));
             }
-        </script>
-        <div align="right">
-            <button id="send-button" onclick="sendBallot()">Send</button>
-            <button id="get-button" onclick="loadBallot()">Reload</button>
-        </div>
-    </div>
+
+        initialize();
+    </script>
 </body>

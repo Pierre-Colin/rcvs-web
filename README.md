@@ -6,8 +6,9 @@ All the back-end code is written in safe Rust. This server uses the [Actix](http
 
 ## To-do list
 * The result HTML page. _(work in progress)_
-* Use persistent storage for the ballots (may require a DBMS).
-* The application state may store partial election results, but this is not fully implemented yet.
+* The application state should store the DBMS connection.
+* The application state may store partial election results, but this is not implemented yet.
 * Switch to a better graph displaying library, such as graphviz.
 * A manual HTML page.
+* First-come-first-served verification that the election is open/closed.
 * Authentication systems for both the admin and the electors that aren’t based on IP.

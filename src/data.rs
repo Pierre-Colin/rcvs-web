@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::fmt::Debug;
+use std::hash::Hash;
 use std::iter::FromIterator;
 
 use serde::{Deserialize, Serialize};
@@ -12,31 +14,31 @@ pub struct AlternativeData {
 
 #[derive(Serialize, Debug, Clone)]
 #[serde(untagged)]
-pub enum StrategyData {
-    Pure(String),
-    Mixed(HashMap<String, f64>),
+pub enum StrategyData<V: Serialize + Eq + Hash> {
+    Pure(V),
+    Mixed(HashMap<V, f64>),
 }
 
-impl StrategyData {
-    pub fn new(strategy: &rcvs::Strategy<String>) -> Self {
+impl<V: Serialize + Eq + Hash + Clone> StrategyData<V> {
+    pub fn new(strategy: &rcvs::Strategy<V>) -> Self {
         match strategy {
-            rcvs::Strategy::Pure(a) => Self::Pure(a.to_string()),
+            rcvs::Strategy::Pure(a) => Self::Pure(a.to_owned()),
             rcvs::Strategy::Mixed(p) => Self::Mixed(HashMap::from_iter(p.iter().cloned())),
         }
     }
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub struct ResultData {
+pub struct ResultData<V: Serialize + Eq + Hash> {
     title: String,
-    alternatives: Vec<String>,
+    alternatives: Vec<V>,
     arrows: Vec<HashMap<String, usize>>,
-    strategy: Option<StrategyData>,
-    winner: Option<String>,
+    strategy: Option<StrategyData<V>>,
+    winner: Option<V>,
 }
 
-impl ResultData {
-    pub fn from_election(title: &str, election: &rcvs::Election<String>) -> Option<Self> {
+impl<V: Serialize + Clone + Eq + Hash + Debug> ResultData<V> {
+    pub fn from_election(title: &str, election: &rcvs::Election<V>) -> Option<Self> {
         let graph = election.get_duel_graph();
         let alternatives = graph.get_vertices().to_vec();
         let mut arrows = Vec::new();
