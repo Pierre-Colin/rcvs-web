@@ -17,32 +17,14 @@
             border: 1px solid darkgray;
             padding: 0.5em;
         }
+
+        #winner-name {
+            font-size: 200%;
+            color: gold
+        }
     </style>
 </head>
 <body>
-    <script>
-        var resultData;
-        var resultDataRequest = new XMLHttpRequest();
-        resultDataRequest.onreadystatechange = function() {
-            if (this.readyState === 4 && this.status === 200) {
-                resultData = JSON.parse(this.responseText);
-                document.getElementById("election-title").innerHTML =
-                    resultData.title;
-                document.title = resultData.title;
-                var enableJS = document.getElementById("enable-js");
-                enableJS.parentNode.removeChild(enableJS);
-                document.getElementById("how-it-works").style.display =
-                    "block";
-                initResult(resultData);
-            } else if (this.readyState === 4) {
-                document.getElementById("enable-js").innerHTML =
-                    "HTTP " + this.status + " − " + this.responseText;
-                document.title = "RCVS − Error " + this.status;
-            }
-        };
-        resultDataRequest.open("GET", "/api/result", true);
-        resultDataRequest.send();
-    </script>
     <div id="enable-js" style="color:red">
         Please enable JavaScript to use this HTML interface.
     </div>
@@ -51,7 +33,7 @@
         You are viewing the results of the election. To vote, please proceed to
         the <a href="/vote">ballot page</a>.
     </p>
-    <div id="how-it-works" style="display: none">
+    <div id="duel-graph" style="display: none">
         <h2>Duel graph</h2>
         <p>
             Below is the duel graph of the election. The vertices depict the
@@ -85,29 +67,6 @@
             );
 
             function initResult(response) {
-                var dataVertices = [];
-                for (a = 0; a < response.alternatives.length; a++) {
-                    dataVertices.push({
-                        id: a + 1,
-                        label: response.alternatives[a]
-                    });
-                }
-                var vertices = new vis.DataSet(dataVertices);
-
-                var dataArrows = [];
-                for (a = 0; a < response.arrows.length; a++) {
-                    dataArrows.push({
-                        from: response.arrows[a].from + 1,
-                        to: response.arrows[a].to + 1
-                    });
-                }
-                var arrows = new vis.DataSet(dataArrows);
-
-                network.setData({
-                    nodes: vertices,
-                    edges: arrows
-                });
-
                 if (typeof response.strategy === "string") {
                     var warning = document.getElementById("mixed-strategy");
                     warning.style = "color: orange";
@@ -138,36 +97,161 @@
             }
         </script>
 
-        <h2>Optimal strategy</h2>
-        <div id="mixed-strategy" style="display: none">
-            This section should not show.
+        <div id="optimal-strategy">
+            <h2>Optimal strategy</h2>
+            <div id="mixed-strategy" style="display: none">
+                This section should not show.
+            </div>
+            <p>
+                Below is the optimal strategy that was computed for this
+                election. Picking the winner with this probability distribution
+                will minimize the number of electors wishing a different
+                alternative had won. If there are pairwise equal alternatives,
+                then this distribution may not be unique. If the duel graph is
+                not weakly connected or contains several sources, then it is
+                definitely not unique.
+            </p>
+            <table id="strategy-table">
+            </table>
         </div>
-        <p>
-            Below is the optimal strategy that was computed for this election.
-            Picking the winner with this probability distribution will minimize
-            the number of electors wishing a different alternative had won.
-            If there pairwise equal alternatives, then this distribution may
-            not be unique. If the duel graph is not weakly connected, then it
-            is definitely not unique.
-        </p>
-        <table id="strategy-table">
-        </table>
 
-        <h2>Winner</h2>
-        <p>
-            TODO
-        </p>
+        <div id="prospect-winner">
+            <h2>Prospect winner</h2>
+            <div>
+                Because the duel graph has a unique source, if the election
+                ended now, the winner would be
+                <p id="prospect-winner-name" style="display: inline"></p>.
+            </div>
+        </div>
+
+        <div id="winner">
+            <h2>Winner</h2>
+            <div>
+                By <p id="winner-by" style="display: inline"></p>, the winner
+                of this election is:
+                <div id="winner-name" align="center"></div>
+            </div>
+        </div>
 
         <div id="send-status">&nbsp;</div>
-        <script>
-            var sendStatus = document.getElementById("send-status");
 
-            function reloadResult() {
-                console.log("Unimplemented");
-            }
-        </script>
         <div align="right">
-            <button id="get-button" onclick="reloadResult()">Reload</button>
+            <button id="get-button" onclick="loadResult()">Reload</button>
         </div>
     </div>
+
+    <script>
+        var enableJS = document.getElementById("enable-js");
+        var electionTitle = document.getElementById("election-title");
+        var reloadButton = document.getElementById("get-button");
+        var optimalStrategy = document.getElementById("optimal-strategy");
+        var strategyTable = document.getElementById("strategy-table");
+        var resultData;
+        var alternativeMap;
+
+        function drawGraph(alternatives, dataArrows) {
+            var dataVertices = [];
+            for (let alternative of alternatives) {
+                dataVertices.push({
+                    id: alternative.id,
+                    label: alternative.name
+                });
+            }
+            var vertices = new vis.DataSet(dataVertices);
+            var arrows = new vis.DataSet(dataArrows);
+            network.setData({
+                nodes: vertices,
+                edges: arrows
+            });
+            document.getElementById("duel-graph").style = "";
+        }
+
+        function showStrategy(alternatives, strategy) {
+            alternativeMap = new Map();
+            for (let alternative of alternatives) {
+                alternativeMap[alternative.id] = alternative.description;
+            }
+
+            strategyTable.innerHTML = "";
+            if (typeof strategy === "number") {
+                optimalStrategy.style.display = "none";
+            } else {
+                optimalStrategy.style.display = "block";
+                var headRow = document.createElement("tr");
+                var headLeft = document.createElement("th");
+                headLeft.innerHTML = "Alternative";
+                headRow.appendChild(headLeft);
+                var headRight = document.createElement("th");
+                headRight.innerHTML = "Probability";
+                headRow.appendChild(headRight);
+                strategyTable.appendChild(headRow);
+
+                for (let [id, p] of Object.entries(strategy)) {
+                    var row = document.createElement("tr");
+                    var alternativeCell = document.createElement("td");
+                    alternativeCell.innerHTML = alternativeMap[id];
+                    row.appendChild(alternativeCell);
+                    var probabilityCell = document.createElement("td");
+                    probabilityCell.innerHTML = p;
+                    row.appendChild(probabilityCell);
+                    strategyTable.appendChild(row);
+                }
+            }
+        }
+
+        function showWinner(alternatives, strategy, winner) {
+            var winnerBy = document.getElementById("winner-by");
+            var winnerDiv = document.getElementById("winner");
+            var prospectWinnerDiv = document.getElementById("prospect-winner");
+            if (winner !== null) {
+                winnerDiv.style.display = "block";
+                prosopectWinnerDiv.style.display = "none";
+            } else {
+                winnerDiv.style.display = "none";
+                if (typeof strategy === "number") {
+                    prospectWinnerDiv.style.display = "block";
+                    document.getElementById("prospect-winner-name").innerHTML =
+                        alternativeMap[strategy];
+                } else {
+                    prospectWinnerDiv.style.display = "none";
+                }
+            }
+            if (typeof strategy === "number") {
+                winnerBy.innerHTML = "Condorcet winner";
+            } else {
+                winnerBy.innerHTML = "the above probability distribution";
+            }
+            document.getElementById("winner-name").innerHTML =
+                "Libertarian Party!";
+        }
+
+        function loadResult() {
+            reloadButton.disabled = true;
+            electionTitle.innerHTML = "Loading…";
+            document.title = "RCVS — Loading…";
+            enableJS.style.visibility = "hidden";
+            var resultRequest = new XMLHttpRequest();
+            resultRequest.onreadystatechange = function() {
+                if (this.readyState === 4 && this.status === 200) {
+                    resultData = JSON.parse(this.responseText);
+                    electionTitle.innerHTML = resultData.title;
+                    document.title = "RCVS — " + resultData.title;
+                    drawGraph(resultData.alternatives, resultData.arrows);
+                    showStrategy(resultData.alternatives, resultData.strategy);
+                    showWinner(resultData.alternatives, resultData.strategy, resultData.winner);
+                    reloadButton.disabled = false;
+                } else if (this.readyState === 4) {
+                    electionTitle.innerHTML = "Error " + this.status;
+                    document.title = "RCVS — Error " + this.status;
+                    enableJS.innerHTML = "HTTP " + this.status + " — " + this.responseText;
+                    enableJS.style.visibility = "visible";
+                    reloadButton.disabled = false;
+                }
+            };
+            resultRequest.open("GET", "/api/result", true);
+            resultRequest.send();
+        }
+
+        loadResult();
+    </script>
 </body>
