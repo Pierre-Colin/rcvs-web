@@ -5,7 +5,7 @@ use std::io::BufReader;
 // use std::iter::FromIterator;
 use std::collections::HashMap;
 // use std::net::IpAddr;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use actix_files::NamedFile;
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
@@ -31,6 +31,8 @@ struct BallotData {
 
 #[derive(Clone, Debug)]
 enum BallotValidityError<V> {
+    // May be used to intercept SQL error
+    #[allow(dead_code)]
     AlternativeNotFound(V),
     InvalidRankRange(u64, u64),
     DuplicateAlternative(V),
@@ -70,17 +72,19 @@ struct NewResultData {
 #[derive(Clone, Debug)]
 struct AppState {
     election_data: ElectionData,
+    database: Arc<Mutex<model::DatabaseConnection>>,
     open: bool,
     result: Option<Vec<ArrowData>>,
 }
 
 impl AppState {
-    fn new(election_config: &str) -> std::io::Result<Self> {
+    fn new(election_config: &str) -> Result<Self, Box<dyn Error>> {
         let file = File::open(election_config)?;
         let reader = BufReader::new(file);
         let election_data = serde_json::from_reader(reader)?;
         Ok(Self {
             election_data: election_data,
+            database: Arc::new(Mutex::new(model::DatabaseConnection::new("model.db", "model.sql")?)),
             open: true,
             result: None,
         })
@@ -95,19 +99,27 @@ async fn get_info(req: HttpRequest, state: SharedState) -> impl Responder {
         None => return HttpResponse::InternalServerError()
             .body("Failed to retrieve client IP address"),
     };
-
-    let mut data = match model::get_data(&ip.to_string()) {
-        Ok(data) => data,
-        Err(what) => return HttpResponse::InternalServerError()
-            .body(&format!("Failed to query data base: {}", what)),
-    };
-
+    
     let state_lock = match state.read() {
         Ok(l) => l,
         Err(what) => return HttpResponse::InternalServerError()
             .body(&format!("Mutex poisoned: {}", what)),
     };
     let state = &*state_lock;
+
+    let mut database_lock = match state.database.lock() {
+        Ok(l) => l,
+        Err(what) => return HttpResponse::InternalServerError()
+            .body(&format!("Mutex poisoned: {}", what)),
+    };
+
+    let mut data = match model::get_data(&mut *database_lock, &ip.to_string()) {
+        Ok(data) => data,
+        Err(what) => return HttpResponse::InternalServerError()
+            .body(&format!("Failed to query data base: {}", what)),
+    };
+
+    std::mem::drop(database_lock);
 
     data.title = Some(state.election_data.title.to_string());
 
@@ -134,7 +146,7 @@ fn check_ballot_shape(ballot: &[model::BallotRow]) -> Result<(), BallotValidityE
     Ok(())
 }
 
-async fn post_ballot(req: HttpRequest, ballot: web::Json<Vec<model::BallotRow>>) -> impl Responder {
+async fn post_ballot(req: HttpRequest, ballot: web::Json<Vec<model::BallotRow>>, state: SharedState) -> impl Responder {
     let ip = match req.peer_addr() {
         Some(a) => a.ip(),
         None => return HttpResponse::InternalServerError()
@@ -145,49 +157,91 @@ async fn post_ballot(req: HttpRequest, ballot: web::Json<Vec<model::BallotRow>>)
         return HttpResponse::BadRequest().body(&format!("Bad ballot format: {}", what));
     }
 
-    match model::set_ballot(&ip.to_string(), &ballot) {
-        Ok(()) => HttpResponse::NoContent().finish(),
-        Err(what) => HttpResponse::InternalServerError()
-            .body(&format!("Failed to post ballot: {}", what)),
+    let state_lock = match state.read() {
+        Ok(l) => l,
+        Err(what) => return HttpResponse::InternalServerError()
+            .body(&format!("Mutex poisoned: {}", what)),
+    };
+    let state = &*state_lock;
+    
+    if state.open {
+        let mut database_lock = match state.database.lock() {
+            Ok(l) => l,
+            Err(what) => return HttpResponse::InternalServerError()
+                .body(&format!("Mutex poisoned: {}", what)),
+        };
+
+        match model::set_ballot(&mut *database_lock, &ip.to_string(), &ballot) {
+            Ok(()) => HttpResponse::NoContent().finish(),
+            Err(what) => HttpResponse::InternalServerError()
+                .body(&format!("Failed to post ballot: {}", what)),
+        }
+    } else {
+        HttpResponse::Forbidden().body("Election is closed")
     }
 }
 
-async fn delete_ballot(req: HttpRequest) -> impl Responder {
+async fn delete_ballot(req: HttpRequest, state: SharedState) -> impl Responder {
     let ip = match req.peer_addr() {
         Some(a) => a.ip(),
         None => return HttpResponse::InternalServerError()
             .body("Failed to retrieve client IP address"),
     };
 
-    match model::delete_ballot(&ip.to_string()) {
-        Ok(true) => HttpResponse::NoContent().finish(),
-        Ok(false) => HttpResponse::NotFound().body("No ballot detected"),
-        Err(what) => HttpResponse::InternalServerError()
-            .body(&format!("Failed to delete ballot: {}", what)),
+    let state_lock = match state.read() {
+        Ok(l) => l,
+        Err(what) => return HttpResponse::InternalServerError()
+            .body(&format!("Mutex poisoned: {}", what)),
+    };
+    let state = &*state_lock;
+
+    if state.open {
+        let database_lock = match state.database.lock() {
+            Ok(l) => l,
+            Err(what) => return HttpResponse::InternalServerError()
+                .body(&format!("Mutex poisoned: {}", what)),
+        };
+
+        match model::delete_ballot(&*database_lock, &ip.to_string()) {
+            Ok(true) => HttpResponse::NoContent().finish(),
+            Ok(false) => HttpResponse::NotFound().body("No ballot detected"),
+            Err(what) => HttpResponse::InternalServerError()
+                .body(&format!("Failed to delete ballot: {}", what)),
+        }
+    } else {
+        HttpResponse::Forbidden().body("Election is closed")
     }
 }
 
 async fn result(state: SharedState) -> impl Responder {
-    let data = match model::collect_votes() {
+    let state_lock = match state.read() {
+        Ok(lock) => lock,
+        Err(what) => return HttpResponse::InternalServerError().body(&format!("Mutex poisoned: {}", what)),
+    };
+    let state = &*state_lock;
+
+    let mut database_lock = match state.database.lock() {
+        Ok(lock) => lock,
+        Err(what) => return HttpResponse::InternalServerError().body(&format!("Mutex poisoned: {}", what)),
+    };
+
+    let data = match model::collect_votes(&mut *database_lock) {
         Ok(data) => data,
         Err(what) => return HttpResponse::InternalServerError()
             .body(&format!("Failed to collect ballots: {}", what)),
     };
 
-    let lock = match state.read() {
-        Ok(lock) => lock,
-        Err(what) => return HttpResponse::InternalServerError().body(&format!("Mutex poisoned: {}", what)),
-    };
+    std::mem::drop(database_lock);
 
     let mut result_data = NewResultData {
-        title: (*lock).election_data.title.to_string(),
+        title: state.election_data.title.to_string(),
         alternatives: data.alternatives.to_vec(),
         arrows: Vec::new(),
         strategy: None,
         winner: None,
     };
 
-    std::mem::drop(lock);
+    std::mem::drop(state_lock);
 
     let mut election = rcvs::Election::new();
     for alternative in data.alternatives {
@@ -234,8 +288,6 @@ async fn result(state: SharedState) -> impl Responder {
 }
 
 async fn close(req: HttpRequest, state: SharedState) -> impl Responder {
-    eprintln!("Closing elections doesn't really work at the moment.");
-
     let ip = match req.peer_addr() {
         Some(a) => a.ip(),
         None => return HttpResponse::InternalServerError()
@@ -259,8 +311,6 @@ async fn close(req: HttpRequest, state: SharedState) -> impl Responder {
 }
 
 async fn open(req: HttpRequest, state: SharedState) -> impl Responder {
-    eprintln!("Closing elections doesn't really work at the moment.");
-
     let ip = match req.peer_addr() {
         Some(a) => a.ip(),
         None => return HttpResponse::InternalServerError()
@@ -299,7 +349,7 @@ async fn result_page() -> actix_web::Result<NamedFile> {
 
 #[actix_rt::main]
 async fn main() -> std::io::Result<()> {
-    let app_state = Arc::new(RwLock::new(AppState::new("election.json")?));
+    let app_state = Arc::new(RwLock::new(AppState::new("election.json").expect("Failed to initialize application state")));
     HttpServer::new(move || {
         App::new()
             .data(app_state.clone())

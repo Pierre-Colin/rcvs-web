@@ -3,6 +3,28 @@ use std::{error::Error, fs, path::Path};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug)]
+pub struct DatabaseConnection {
+    connection: Connection,
+}
+
+impl DatabaseConnection {
+    pub fn new(url: &str, init: &str) -> rusqlite::Result<Self> {
+        // FIXME: this is a TOCTOU race condition
+        let new = !Path::new(url).exists();
+        let connection = Connection::open(url)?;
+        if new {
+            let model_code = fs::read_to_string(init).expect("Failed to open init code");
+            connection
+                .execute_batch(&model_code)
+                .expect("Failed to run init code");
+        }
+        Ok(Self {
+            connection: connection,
+        })
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct BallotRow {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -27,23 +49,13 @@ pub struct ElectionData {
     pub ballot: Vec<BallotRow>,
 }
 
-fn connect(url: &str, init: &str) -> rusqlite::Result<Connection> {
-    // TODO: fix LBYL data race
-    let new = !Path::new(url).exists();
-    let connection = Connection::open(url)?;
-    if new {
-        let model_code = fs::read_to_string(init).expect("Failed to open init code");
-        connection
-            .execute_batch(&model_code)
-            .expect("Failed to run init code");
-    }
-    Ok(connection)
-}
-
 // May be used in the future
 #[allow(dead_code)]
-pub fn get_ballot(ip: &str) -> Result<Vec<BallotRow>, Box<dyn Error>> {
-    let connection = connect("model.db", "model.sql")?;
+pub fn get_ballot(
+    connection: &DatabaseConnection,
+    ip: &str,
+) -> Result<Vec<BallotRow>, Box<dyn Error>> {
+    let connection = &connection.connection;
 
     let mut statement = connection.prepare(
         "SELECT altId, rankMin, rankMax FROM ranking JOIN elector USING(elecId) WHERE elecIp = ?1",
@@ -62,8 +74,8 @@ pub fn get_ballot(ip: &str) -> Result<Vec<BallotRow>, Box<dyn Error>> {
     Ok(ballot)
 }
 
-pub fn delete_ballot(ip: &str) -> Result<bool, Box<dyn Error>> {
-    let connection = connect("model.db", "model.sql")?;
+pub fn delete_ballot(connection: &DatabaseConnection, ip: &str) -> Result<bool, Box<dyn Error>> {
+    let connection = &connection.connection;
 
     let deleted = connection.execute("DELETE FROM elector WHERE elecIp = ?1", params![ip])?;
 
@@ -93,8 +105,12 @@ fn get_put_elector(ip: &str, connection: &Connection) -> Result<i64, Box<dyn Err
     }
 }
 
-pub fn set_ballot(ip: &str, ballot: &[BallotRow]) -> Result<(), Box<dyn Error>> {
-    let mut connection = connect("model.db", "model.sql")?;
+pub fn set_ballot(
+    connection: &mut DatabaseConnection,
+    ip: &str,
+    ballot: &[BallotRow],
+) -> Result<(), Box<dyn Error>> {
+    let connection = &mut connection.connection;
 
     let transaction = connection.transaction()?;
     let elector = get_put_elector(ip, &transaction)?;
@@ -116,8 +132,11 @@ pub fn set_ballot(ip: &str, ballot: &[BallotRow]) -> Result<(), Box<dyn Error>> 
 }
 
 // TODO: factorize these two functions
-pub fn get_data(ip: &str) -> Result<ElectionData, Box<dyn Error>> {
-    let mut connection = connect("model.db", "model.sql")?;
+pub fn get_data(
+    connection: &mut DatabaseConnection,
+    ip: &str,
+) -> Result<ElectionData, Box<dyn Error>> {
+    let connection = &mut connection.connection;
 
     let transaction = connection.transaction()?;
     let mut statement = transaction.prepare("SELECT * FROM alternative")?;
@@ -164,8 +183,8 @@ pub fn get_data(ip: &str) -> Result<ElectionData, Box<dyn Error>> {
     })
 }
 
-pub fn collect_votes() -> Result<ElectionData, Box<dyn Error>> {
-    let mut connection = connect("model.db", "model.sql")?;
+pub fn collect_votes(connection: &mut DatabaseConnection) -> Result<ElectionData, Box<dyn Error>> {
+    let connection = &mut connection.connection;
 
     let transaction = connection.transaction()?;
     let mut statement = transaction.prepare("SELECT * FROM alternative")?;
