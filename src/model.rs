@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 pub struct BallotRow {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub elector: Option<usize>,
     pub alternative: usize,
     pub min: u64,
     pub max: u64,
@@ -51,6 +53,7 @@ pub fn get_ballot(ip: &str) -> Result<Vec<BallotRow>, Box<dyn Error>> {
     let mut ballot = Vec::new();
     while let Some(row) = rows.next()? {
         ballot.push(BallotRow {
+            elector: None,
             alternative: row.get::<usize, i64>(0)? as usize,
             min: row.get::<usize, i64>(1)? as u64,
             max: row.get::<usize, i64>(2)? as u64,
@@ -142,6 +145,7 @@ pub fn get_data(ip: &str) -> Result<ElectionData, Box<dyn Error>> {
     )?;
     let ballot_iter = statement.query_map(params![ip], |row| {
         Ok(BallotRow {
+            elector: None,
             alternative: row.get::<usize, i64>(0)? as usize,
             min: row.get::<usize, i64>(1)? as u64,
             max: row.get::<usize, i64>(2)? as u64,
@@ -184,12 +188,13 @@ pub fn collect_votes() -> Result<ElectionData, Box<dyn Error>> {
     }
     std::mem::drop(statement);
 
-    let mut statement = transaction.prepare("SELECT altId, rankMin, rankMax FROM ranking")?;
+    let mut statement = transaction.prepare("SELECT * FROM ranking")?;
     let ballot_iter = statement.query_map(params![], |row| {
         Ok(BallotRow {
-            alternative: row.get::<usize, i64>(0)? as usize,
-            min: row.get::<usize, i64>(1)? as u64,
-            max: row.get::<usize, i64>(2)? as u64,
+            elector: Some(row.get::<usize, i64>(0)? as usize),
+            alternative: row.get::<usize, i64>(1)? as usize,
+            min: row.get::<usize, i64>(2)? as u64,
+            max: row.get::<usize, i64>(3)? as u64,
         })
     })?;
 

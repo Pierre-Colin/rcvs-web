@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::BufReader;
 // use std::iter::FromIterator;
 use std::collections::HashMap;
-use std::net::IpAddr;
+// use std::net::IpAddr;
 use std::sync::{Arc, RwLock};
 
 use actix_files::NamedFile;
@@ -52,31 +52,26 @@ impl<V: fmt::Display> fmt::Display for BallotValidityError<V> {
     }
 }
 
-impl BallotData {
-    fn check_errors(ballots: &[BallotData], alternatives: &[AlternativeData]) -> Result<(), BallotValidityError<String>> {
-        for (i, ballot) in ballots.iter().enumerate() {
-            if ballot.min > ballot.max {
-                return Err(BallotValidityError::InvalidRankRange(ballot.min, ballot.max));
-            }
-            if !alternatives.iter().map(|alternative| &alternative.id).any(|id| id == &ballot.alternative) {
-                return Err(BallotValidityError::AlternativeNotFound(ballot.alternative.to_string()));
-            }
-            for other in ballots.iter().take(i).rev() {
-                if ballot.alternative == other.alternative {
-                    return Err(BallotValidityError::DuplicateAlternative(ballot.alternative.to_string()));
-                }
-            }
-        }
-        Ok(())
-    }
+#[derive(Clone, Copy, Debug, Serialize)]
+struct ArrowData {
+    from: usize,
+    to: usize,
+}
+
+#[derive(Serialize)]
+struct NewResultData {
+    title: String,
+    alternatives: Vec<model::AlternativeData>,
+    arrows: Vec<ArrowData>,
+    strategy: Option<StrategyData<usize>>,
+    winner: Option<usize>,
 }
 
 #[derive(Clone, Debug)]
 struct AppState {
     election_data: ElectionData,
     open: bool,
-    ballots: Arc<RwLock<HashMap<IpAddr, Vec<BallotData>>>>,
-    result: Option<ResultData<String>>,
+    result: Option<Vec<ArrowData>>,
 }
 
 impl AppState {
@@ -87,34 +82,8 @@ impl AppState {
         Ok(Self {
             election_data: election_data,
             open: true,
-            ballots: Arc::new(RwLock::new(HashMap::new())),
             result: None,
         })
-    }
-
-    fn compute_result<'a>(&'a mut self) -> Result<(), Box<dyn Error + 'a>> {
-        let lock = match self.ballots.read() {
-            Ok(l) => l,
-            Err(what) => return Err(Box::new(what)),
-        };
-
-        let mut election = rcvs::Election::new();
-        for alternative in &self.election_data.alternatives {
-            election.add_alternative(&alternative.id);
-        }
-
-        for (_, ballot_data) in (*lock).iter() {
-            let mut ballot = rcvs::Ballot::new();
-            for entry in ballot_data {
-                ballot.insert(entry.alternative.to_string(), entry.min, entry.max);
-            }
-            election.cast(ballot);
-        }
-
-        std::mem::drop(lock);
-
-        self.result = ResultData::from_election(&self.election_data.title, &election);
-        Ok(())
     }
 }
 
@@ -198,79 +167,75 @@ async fn delete_ballot(req: HttpRequest) -> impl Responder {
     }
 }
 
-async fn result() -> impl Responder {
+async fn result(state: SharedState) -> impl Responder {
     let data = match model::collect_votes() {
         Ok(data) => data,
         Err(what) => return HttpResponse::InternalServerError()
             .body(&format!("Failed to collect ballots: {}", what)),
     };
 
+    let lock = match state.read() {
+        Ok(lock) => lock,
+        Err(what) => return HttpResponse::InternalServerError().body(&format!("Mutex poisoned: {}", what)),
+    };
+
+    let mut result_data = NewResultData {
+        title: (*lock).election_data.title.to_string(),
+        alternatives: data.alternatives.to_vec(),
+        arrows: Vec::new(),
+        strategy: None,
+        winner: None,
+    };
+
+    std::mem::drop(lock);
+
     let mut election = rcvs::Election::new();
     for alternative in data.alternatives {
         election.add_alternative(&(alternative.id as usize));
     }
+    let mut ballots: HashMap<usize, rcvs::Ballot<usize>> = HashMap::new();
     for ranking in data.ballot {
-        let mut ballot = rcvs::Ballot::new();
-        ballot.insert(ranking.alternative, ranking.min, ranking.max);
-        election.cast(ballot);
-    }
-
-    HttpResponse::Ok().json(ResultData::from_election("Foo", &election))
-}
-
-async fn result_old(state: SharedState) -> impl Responder {
-    let state_lock = match state.read() {
-        Ok(l) => l,
-        Err(what) => return HttpResponse::InternalServerError()
-            .body(&format!("Mutex poisoned: {}", what)),
-    };
-    let state = &*state_lock;
-
-    let mut election = rcvs::Election::new();
-    for alternative in &state.election_data.alternatives {
-        election.add_alternative(&alternative.id);
-    }
-
-    if state.open {
-        let lock = match state.ballots.read() {
-            Ok(l) => l,
-            Err(what) => return HttpResponse::InternalServerError()
-                .body(&format!("Mutex poisoned: {}", what)),
+        let elector = match ranking.elector {
+            Some(elector) => elector,
+            None => return HttpResponse::InternalServerError().body("Ranking in database has no elector"),
         };
-
-        for (_, ballot_data) in (*lock).iter() {
-            let mut ballot = rcvs::Ballot::new();
-            for ballot_entry in ballot_data {
-                ballot.insert(ballot_entry.alternative.to_string(), ballot_entry.min, ballot_entry.max);
-            }
-            election.cast(ballot);
+        match ballots.get_mut(&elector) {
+            Some(ballot) => if !(*ballot).insert(ranking.alternative, ranking.min, ranking.max) {
+                return HttpResponse::InternalServerError().body("Ranking in database is invalid");
+            },
+            None => {
+                let mut ballot = rcvs::Ballot::new();
+                ballot.insert(ranking.alternative, ranking.min, ranking.max);
+                ballots.insert(elector, ballot);
+            },
         }
-
-        std::mem::drop(lock);
-
-        return HttpResponse::Ok().json(ResultData::from_election(&(*state_lock).election_data.title, &election));
-    } else {
-        let lock = match state.ballots.read() {
-            Ok(l) => l,
-            Err(what) => return HttpResponse::InternalServerError()
-                .body(&format!("Mutex poisoned: {}", what)),
-        };
-
-        for (_, ballot_data) in (*lock).iter() {
-            let mut ballot = rcvs::Ballot::new();
-            for ballot_entry in ballot_data {
-                ballot.insert(ballot_entry.alternative.to_string(), ballot_entry.min, ballot_entry.max);
-            }
-            election.cast(ballot);
-        }
-
-        std::mem::drop(lock);
-
-        return HttpResponse::Ok().json(ResultData::from_election(&(*state_lock).election_data.title, &election));
     }
+    for (_, ballot) in ballots.iter() {
+        election.cast(ballot.to_owned());
+    }
+
+    let graph = election.get_duel_graph();
+    for (i, alternative) in graph.get_vertices().iter().enumerate() {
+        for (j, other) in graph.get_vertices().iter().enumerate() {
+            if i != j && graph[(i, j)] {
+                result_data.arrows.push(ArrowData {
+                    from: *alternative,
+                    to: *other,
+                });
+            }
+        }
+    }
+
+    if let Ok(strategy) = graph.get_optimal_strategy() {
+        result_data.strategy = Some(StrategyData::new(&strategy));
+    }
+
+    HttpResponse::Ok().json(result_data)
 }
 
 async fn close(req: HttpRequest, state: SharedState) -> impl Responder {
+    eprintln!("Closing elections doesn't really work at the moment.");
+
     let ip = match req.peer_addr() {
         Some(a) => a.ip(),
         None => return HttpResponse::InternalServerError()
@@ -288,16 +253,14 @@ async fn close(req: HttpRequest, state: SharedState) -> impl Responder {
     };
     let state = &mut *state_lock;
 
-    match state.compute_result() {
-        Ok(()) => (),
-        Err(what) => return HttpResponse::InternalServerError().body(&format!("{}", what)),
-    }
     state.open = false;
 
     HttpResponse::Ok().finish()
 }
 
 async fn open(req: HttpRequest, state: SharedState) -> impl Responder {
+    eprintln!("Closing elections doesn't really work at the moment.");
+
     let ip = match req.peer_addr() {
         Some(a) => a.ip(),
         None => return HttpResponse::InternalServerError()
