@@ -7,11 +7,11 @@ use std::collections::HashMap;
 // use std::net::IpAddr;
 use std::sync::{Arc, Mutex, RwLock};
 
-use actix_files::NamedFile;
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use serde::{Deserialize, Serialize};
 
 mod data;
+mod html_interface;
 mod model;
 
 use data::*;
@@ -220,6 +220,8 @@ async fn result(state: SharedState) -> impl Responder {
     };
     let state = &*state_lock;
 
+    let open = state.open;
+
     let mut database_lock = match state.database.lock() {
         Ok(lock) => lock,
         Err(what) => return HttpResponse::InternalServerError().body(&format!("Mutex poisoned: {}", what)),
@@ -333,20 +335,6 @@ async fn open(req: HttpRequest, state: SharedState) -> impl Responder {
     HttpResponse::Ok().finish()
 }
 
-async fn vote_page() -> actix_web::Result<NamedFile> {
-    let path: std::path::PathBuf = "vote.html".parse()?;
-    let file = NamedFile::open(path)?
-        .set_content_type("text/html; charset=utf-8".parse::<mime::Mime>().unwrap());
-    Ok(file)
-}
-
-async fn result_page() -> actix_web::Result<NamedFile> {
-    let path: std::path::PathBuf = "result.html".parse()?;
-    let file = NamedFile::open(path)?
-        .set_content_type("text/html; charset=utf-8".parse::<mime::Mime>().unwrap());
-    Ok(file)
-}
-
 #[actix_rt::main]
 async fn main() -> std::io::Result<()> {
     let app_state = Arc::new(RwLock::new(AppState::new("election.json").expect("Failed to initialize application state")));
@@ -363,8 +351,8 @@ async fn main() -> std::io::Result<()> {
                 .route("/close", web::get().to(close))
                 .route("/open", web::get().to(open))
             )
-            .route("/vote", web::get().to(vote_page))
-            .route("/result", web::get().to(result_page))
+            .route("/vote", web::get().to(html_interface::vote))
+            .route("/result", web::get().to(html_interface::result))
     })
     .bind("127.0.0.1:8080")?
     .run()
