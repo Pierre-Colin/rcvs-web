@@ -9,15 +9,28 @@ pub struct DatabaseConnection {
 }
 
 impl DatabaseConnection {
-    pub fn new(url: &str, init: &str) -> rusqlite::Result<Self> {
+    pub fn new(
+        url: &str,
+        init: &str,
+        alternatives: &[crate::data::AlternativeData],
+    ) -> rusqlite::Result<Self> {
         // FIXME: this is a TOCTOU race condition
         let new = !Path::new(url).exists();
-        let connection = Connection::open(url)?;
+        let mut connection = Connection::open(url)?;
         if new {
             let model_code = fs::read_to_string(init).expect("Failed to open init code");
             connection
                 .execute_batch(&model_code)
                 .expect("Failed to run init code");
+
+            let transaction = connection.transaction()?;
+            for alternative in alternatives {
+                transaction.execute(
+                    "INSERT INTO Alternative VALUES (null, ?1, ?2, ?3)",
+                    params![alternative.id, alternative.description, alternative.icon],
+                )?;
+            }
+            transaction.commit()?;
         }
         Ok(Self {
             connection: connection,

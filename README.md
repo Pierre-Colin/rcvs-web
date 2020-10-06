@@ -6,10 +6,10 @@ All the back-end code is written in safe Rust. This server uses the [Actix](http
 
 ## To-do list
 This list is ordered in order of perceived priority.
-* Initialize the database from the JSON file.
 * The application state may store partial election results, but this is not implemented yet.
 * First-come-first-served verification that the election is open/closed.
 * A manual HTML page introducing the voting system itself.
+* Modify the election after it started.
 * Switch to a better graph displaying library, such as graphviz.
 * Authentication systems for both the admin and the electors that aren’t based on IP addresses.
 * Switch to a DBMS with better concurrency support, maybe with [Diesel](http://diesel.rs/).

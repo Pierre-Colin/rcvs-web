@@ -81,10 +81,11 @@ impl AppState {
     fn new(election_config: &str) -> Result<Self, Box<dyn Error>> {
         let file = File::open(election_config)?;
         let reader = BufReader::new(file);
-        let election_data = serde_json::from_reader(reader)?;
+        let election_data: ElectionData = serde_json::from_reader(reader)?;
+        let connection = model::DatabaseConnection::new("model.db", "model.sql", &election_data.alternatives)?;
         Ok(Self {
             election_data: election_data,
-            database: Arc::new(Mutex::new(model::DatabaseConnection::new("model.db", "model.sql")?)),
+            database: Arc::new(Mutex::new(connection)),
             open: true,
             result: None,
         })
