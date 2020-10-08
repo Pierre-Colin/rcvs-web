@@ -2,9 +2,6 @@ use std::error::Error;
 use std::fmt;
 use std::fs::File;
 use std::io::BufReader;
-// use std::iter::FromIterator;
-use std::collections::HashMap;
-// use std::net::IpAddr;
 use std::sync::{Arc, Mutex, RwLock};
 
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
@@ -246,15 +243,7 @@ async fn result(state: SharedState) -> impl Responder {
 
     std::mem::drop(state_lock);
 
-    let mut election = rcvs::Election::new();
-    for alternative in data.alternatives {
-        election.add_alternative(&(alternative.id as usize));
-    }
-    for (_, ballot) in data.ballots.iter() {
-        election.cast(ballot.to_owned());
-    }
-
-    let graph = election.get_duel_graph();
+    let graph = rcvs::build_graph(data.alternatives.iter().map(|x| x.id as usize), data.ballots.iter().map(|(_, x)| x.to_owned()));
     for (i, alternative) in graph.get_vertices().iter().enumerate() {
         for (j, other) in graph.get_vertices().iter().enumerate() {
             if i != j && graph[(i, j)] {
