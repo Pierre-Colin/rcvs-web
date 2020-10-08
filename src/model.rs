@@ -1,4 +1,4 @@
-use std::{error::Error, fs, path::Path};
+use std::{collections::HashMap, error::Error, fs, path::Path};
 
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
@@ -60,6 +60,11 @@ pub struct ElectionData {
     pub title: Option<String>,
     pub alternatives: Vec<AlternativeData>,
     pub ballot: Vec<BallotRow>,
+}
+
+pub struct ResultData {
+    pub alternatives: Vec<AlternativeData>,
+    pub ballots: HashMap<usize, rcvs::Ballot<usize>>,
 }
 
 // May be used in the future
@@ -196,7 +201,7 @@ pub fn get_data(
     })
 }
 
-pub fn collect_votes(connection: &mut DatabaseConnection) -> Result<ElectionData, Box<dyn Error>> {
+pub fn collect_votes(connection: &mut DatabaseConnection) -> Result<ResultData, Box<dyn Error>> {
     let connection = &mut connection.connection;
 
     let transaction = connection.transaction()?;
@@ -230,14 +235,21 @@ pub fn collect_votes(connection: &mut DatabaseConnection) -> Result<ElectionData
         })
     })?;
 
-    let mut ballot = Vec::new();
-    for row in ballot_iter {
-        ballot.push(row?);
+    let mut ballots = HashMap::<usize, rcvs::Ballot<usize>>::new();
+    for row_res in ballot_iter {
+        let row = row_res?;
+        let elector = row.elector.unwrap();
+        if let Some(ballot) = ballots.get_mut(&elector) {
+            ballot.insert(row.alternative, row.min, row.max);
+        } else {
+            let mut ballot = rcvs::Ballot::new();
+            ballot.insert(row.alternative, row.min, row.max);
+            ballots.insert(elector, ballot);
+        }
     }
 
-    Ok(ElectionData {
-        title: None,
+    Ok(ResultData {
         alternatives: alternatives,
-        ballot: ballot,
+        ballots: ballots,
     })
 }

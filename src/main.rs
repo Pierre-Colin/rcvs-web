@@ -250,24 +250,7 @@ async fn result(state: SharedState) -> impl Responder {
     for alternative in data.alternatives {
         election.add_alternative(&(alternative.id as usize));
     }
-    let mut ballots: HashMap<usize, rcvs::Ballot<usize>> = HashMap::new();
-    for ranking in data.ballot {
-        let elector = match ranking.elector {
-            Some(elector) => elector,
-            None => return HttpResponse::InternalServerError().body("Ranking in database has no elector"),
-        };
-        match ballots.get_mut(&elector) {
-            Some(ballot) => if !(*ballot).insert(ranking.alternative, ranking.min, ranking.max) {
-                return HttpResponse::InternalServerError().body("Ranking in database is invalid");
-            },
-            None => {
-                let mut ballot = rcvs::Ballot::new();
-                ballot.insert(ranking.alternative, ranking.min, ranking.max);
-                ballots.insert(elector, ballot);
-            },
-        }
-    }
-    for (_, ballot) in ballots.iter() {
+    for (_, ballot) in data.ballots.iter() {
         election.cast(ballot.to_owned());
     }
 
