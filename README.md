@@ -6,9 +6,9 @@ All the back-end code is written in safe Rust. This server uses the [Actix](http
 
 ## To-do list
 This list is ordered in order of perceived priority.
-* The application state may store partial election results, but this is not implemented yet.
-* First-come-first-served verification that the election is open/closed.
+* Give the `AppState` its own RNG based on PCG.
 * A manual HTML page introducing the voting system itself.
+* First-come-first-served verification that the election is open/closed.
 * Modify the election after it started.
 * Switch to a better graph displaying library, such as graphviz.
 * Authentication systems for both the admin and the electors that aren’t based on IP addresses.

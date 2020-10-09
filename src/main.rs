@@ -2,6 +2,7 @@ use std::error::Error;
 use std::fmt;
 use std::fs::File;
 use std::io::BufReader;
+use std::mem;
 use std::sync::{Arc, Mutex, RwLock};
 
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
@@ -57,7 +58,7 @@ struct ArrowData {
     to: usize,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Debug, Serialize)]
 struct ResultData {
     title: String,
     alternatives: Vec<model::AlternativeData>,
@@ -70,8 +71,7 @@ struct ResultData {
 struct AppState {
     election_data: ElectionData,
     database: Arc<Mutex<model::DatabaseConnection>>,
-    open: bool,
-    result: Option<Vec<ArrowData>>,
+    result: Option<ResultData>,
 }
 
 impl AppState {
@@ -83,9 +83,12 @@ impl AppState {
         Ok(Self {
             election_data: election_data,
             database: Arc::new(Mutex::new(connection)),
-            open: true,
             result: None,
         })
+    }
+
+    fn is_open(&self) -> bool {
+        self.result.is_none()
     }
 }
 
@@ -162,7 +165,7 @@ async fn post_ballot(req: HttpRequest, ballot: web::Json<Vec<model::BallotRow>>,
     };
     let state = &*state_lock;
     
-    if state.open {
+    if state.is_open() {
         let mut database_lock = match state.database.lock() {
             Ok(l) => l,
             Err(what) => return HttpResponse::InternalServerError()
@@ -193,7 +196,7 @@ async fn delete_ballot(req: HttpRequest, state: SharedState) -> impl Responder {
     };
     let state = &*state_lock;
 
-    if state.open {
+    if state.is_open() {
         let database_lock = match state.database.lock() {
             Ok(l) => l,
             Err(what) => return HttpResponse::InternalServerError()
@@ -218,7 +221,9 @@ async fn result(state: SharedState) -> impl Responder {
     };
     let state = &*state_lock;
 
-    let open = state.open;
+    if let Some(result) = &state.result {
+        return HttpResponse::Ok().json(result);
+    }
 
     let mut database_lock = match state.database.lock() {
         Ok(lock) => lock,
@@ -281,9 +286,52 @@ async fn close(req: HttpRequest, state: SharedState) -> impl Responder {
     };
     let state = &mut *state_lock;
 
-    state.open = false;
+    let mut database_lock = match state.database.lock() {
+        Ok(lock) => lock,
+        Err(what) => return HttpResponse::InternalServerError().body(&format!("Mutex poisoned: {}", what)),
+    };
 
-    HttpResponse::Ok().finish()
+    let data = match model::collect_votes(&mut *database_lock) {
+        Ok(data) => data,
+        Err(what) => return HttpResponse::InternalServerError()
+            .body(&format!("Failed to collect ballots: {}", what)),
+    };
+
+    std::mem::drop(database_lock);
+
+    let mut result_data = ResultData {
+        title: state.election_data.title.to_string(),
+        alternatives: data.alternatives.to_vec(),
+        arrows: Vec::new(),
+        strategy: None,
+        winner: None,
+    };
+    
+    let graph = rcvs::build_graph(data.alternatives.iter().map(|x| x.id as usize), data.ballots.iter().map(|(_, x)| x.to_owned()));
+    for (i, alternative) in graph.get_vertices().iter().enumerate() {
+        for (j, other) in graph.get_vertices().iter().enumerate() {
+            if i != j && graph[(i, j)] {
+                result_data.arrows.push(ArrowData {
+                    from: *alternative,
+                    to: *other,
+                });
+            }
+        }
+    }
+    
+    match graph.get_optimal_strategy() {
+        Ok(strategy) => {
+            result_data.strategy = Some(StrategyData::new(&strategy));
+            result_data.winner = strategy.play(&mut rand::thread_rng());
+        },
+        Err(what) => eprintln!("Error: {}", what),
+    }
+
+    state.result = Some(result_data);
+    mem::drop(state_lock);
+    println!("Election has been closed");
+
+    HttpResponse::NoContent().finish()
 }
 
 async fn open(req: HttpRequest, state: SharedState) -> impl Responder {
@@ -304,9 +352,11 @@ async fn open(req: HttpRequest, state: SharedState) -> impl Responder {
     };
     let state = &mut *state_lock;
 
-    state.open = true;
+    state.result = None;
+    mem::drop(state_lock);
+    println!("Election has been open");
 
-    HttpResponse::Ok().finish()
+    HttpResponse::NoContent().finish()
 }
 
 #[actix_rt::main]
