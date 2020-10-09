@@ -205,7 +205,7 @@
             var prospectWinnerDiv = document.getElementById("prospect-winner");
             if (winner !== null) {
                 winnerDiv.style.display = "block";
-                prosopectWinnerDiv.style.display = "none";
+                prospectWinnerDiv.style.display = "none";
             } else {
                 winnerDiv.style.display = "none";
                 if (typeof strategy === "number") {
@@ -221,8 +221,13 @@
             } else {
                 winnerBy.innerHTML = "the above probability distribution";
             }
-            document.getElementById("winner-name").innerHTML =
-                "Libertarian Party!";
+            for (let alternative of alternatives) {
+                if (alternative.id === winner) {
+                    document.getElementById("winner-name").innerHTML =
+                        alternative.description + "!";
+                    break;
+                }
+            }
         }
 
         function loadResult() {
