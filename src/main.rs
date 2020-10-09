@@ -58,7 +58,7 @@ struct ArrowData {
 }
 
 #[derive(Serialize)]
-struct NewResultData {
+struct ResultData {
     title: String,
     alternatives: Vec<model::AlternativeData>,
     arrows: Vec<ArrowData>,
@@ -233,7 +233,7 @@ async fn result(state: SharedState) -> impl Responder {
 
     std::mem::drop(database_lock);
 
-    let mut result_data = NewResultData {
+    let mut result_data = ResultData {
         title: state.election_data.title.to_string(),
         alternatives: data.alternatives.to_vec(),
         arrows: Vec::new(),
@@ -255,8 +255,9 @@ async fn result(state: SharedState) -> impl Responder {
         }
     }
 
-    if let Ok(strategy) = graph.get_optimal_strategy() {
-        result_data.strategy = Some(StrategyData::new(&strategy));
+    match graph.get_optimal_strategy() {
+        Ok(strategy) => result_data.strategy = Some(StrategyData::new(&strategy)),
+        Err(what) => eprintln!("Error: {}", what),
     }
 
     HttpResponse::Ok().json(result_data)
