@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use serde::{Deserialize, Serialize};
+use rand::{RngCore, SeedableRng};
 
 mod data;
 mod html_interface;
@@ -72,6 +73,7 @@ struct AppState {
     election_data: ElectionData,
     database: Arc<Mutex<model::DatabaseConnection>>,
     result: Option<ResultData>,
+    rng: rand_pcg::Pcg64,
 }
 
 impl AppState {
@@ -80,10 +82,13 @@ impl AppState {
         let reader = BufReader::new(file);
         let election_data: ElectionData = serde_json::from_reader(reader)?;
         let connection = model::DatabaseConnection::new("model.db", "model.sql", &election_data.alternatives)?;
+        let mut seed = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut seed);
         Ok(Self {
             election_data: election_data,
             database: Arc::new(Mutex::new(connection)),
             result: None,
+            rng: rand_pcg::Pcg64::from_seed(seed),
         })
     }
 
@@ -322,7 +327,7 @@ async fn close(req: HttpRequest, state: SharedState) -> impl Responder {
     match graph.get_optimal_strategy() {
         Ok(strategy) => {
             result_data.strategy = Some(StrategyData::new(&strategy));
-            result_data.winner = strategy.play(&mut rand::thread_rng());
+            result_data.winner = strategy.play(&mut state.rng);
         },
         Err(what) => eprintln!("Error: {}", what),
     }
