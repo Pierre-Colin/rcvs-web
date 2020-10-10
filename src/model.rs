@@ -149,16 +149,11 @@ pub fn set_ballot(
     Ok(())
 }
 
-// TODO: factorize these two functions
-pub fn get_data(
-    connection: &mut DatabaseConnection,
-    ip: &str,
-) -> Result<ElectionData, Box<dyn Error>> {
-    let connection = &mut connection.connection;
-
-    let transaction = connection.transaction()?;
+fn build_alternative_vector(
+    transaction: &rusqlite::Transaction,
+) -> rusqlite::Result<Vec<AlternativeData>> {
     let mut statement = transaction.prepare("SELECT * FROM alternative")?;
-    let alternative_iter = statement.query_map(params![], |row| {
+    let iterator = statement.query_map(params![], |row| {
         Ok(AlternativeData {
             id: row.get(0)?,
             name: row.get(1)?,
@@ -171,11 +166,21 @@ pub fn get_data(
         })
     })?;
 
-    let mut alternatives = Vec::new();
-    for alternative in alternative_iter {
-        alternatives.push(alternative?);
+    let mut vector = Vec::new();
+    for alternative in iterator {
+        vector.push(alternative?);
     }
-    std::mem::drop(statement);
+    Ok(vector)
+}
+
+pub fn get_data(
+    connection: &mut DatabaseConnection,
+    ip: &str,
+) -> Result<ElectionData, Box<dyn Error>> {
+    let connection = &mut connection.connection;
+    let transaction = connection.transaction()?;
+
+    let alternatives = build_alternative_vector(&transaction)?;
 
     let mut statement = transaction.prepare(
         "SELECT altId, rankMin, rankMax FROM ranking JOIN elector USING(elecId) WHERE elecIp = ?1",
@@ -203,27 +208,9 @@ pub fn get_data(
 
 pub fn collect_votes(connection: &mut DatabaseConnection) -> Result<ResultData, Box<dyn Error>> {
     let connection = &mut connection.connection;
-
     let transaction = connection.transaction()?;
-    let mut statement = transaction.prepare("SELECT * FROM alternative")?;
-    let alternative_iter = statement.query_map(params![], |row| {
-        Ok(AlternativeData {
-            id: row.get(0)?,
-            name: row.get(1)?,
-            description: row
-                .get::<usize, Option<String>>(2)?
-                .unwrap_or(String::new()),
-            icon: row
-                .get::<usize, Option<String>>(3)?
-                .unwrap_or(String::new()),
-        })
-    })?;
 
-    let mut alternatives = Vec::new();
-    for alternative in alternative_iter {
-        alternatives.push(alternative?);
-    }
-    std::mem::drop(statement);
+    let alternatives = build_alternative_vector(&transaction)?;
 
     let mut statement = transaction.prepare("SELECT * FROM ranking")?;
     let ballot_iter = statement.query_map(params![], |row| {
