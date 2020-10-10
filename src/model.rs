@@ -157,12 +157,8 @@ fn build_alternative_vector(
         Ok(AlternativeData {
             id: row.get(0)?,
             name: row.get(1)?,
-            description: row
-                .get::<usize, Option<String>>(2)?
-                .unwrap_or(String::new()),
-            icon: row
-                .get::<usize, Option<String>>(3)?
-                .unwrap_or(String::new()),
+            description: row.get::<usize, Option<String>>(2)?.unwrap_or_default(),
+            icon: row.get::<usize, Option<String>>(3)?.unwrap_or_default(),
         })
     })?;
 
