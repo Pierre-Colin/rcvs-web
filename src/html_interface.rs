@@ -1,9 +1,7 @@
 use std::io::BufRead;
 
 use actix_files::NamedFile;
-use actix_web::{HttpResponse, Responder};
-
-use super::*;
+use actix_web::HttpResponse;
 
 fn read_page(file_name: &str) -> actix_web::Result<NamedFile> {
     let path: std::path::PathBuf = file_name.parse()?;
@@ -12,7 +10,7 @@ fn read_page(file_name: &str) -> actix_web::Result<NamedFile> {
     Ok(file)
 }
 
-fn preprocess_page(file_name: &str, name: &str) -> actix_web::HttpResponse {
+pub fn preprocess_page(file_name: &str, name: &str) -> actix_web::HttpResponse {
     let file = match std::fs::File::open(file_name) {
         Ok(f) => f,
         Err(what) => {
@@ -48,14 +46,4 @@ pub async fn vote() -> actix_web::Result<NamedFile> {
 
 pub async fn result() -> actix_web::Result<NamedFile> {
     read_page("result.html")
-}
-
-pub async fn about(state: SharedState) -> impl Responder {
-    let state_lock = match state.read() {
-        Ok(lock) => lock,
-        Err(what) => {
-            return HttpResponse::InternalServerError().body(&format!("Mutex poisoned: {}", what))
-        }
-    };
-    preprocess_page("about.html", (*state_lock).get_title())
 }

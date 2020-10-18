@@ -69,7 +69,7 @@ struct ResultData {
 }
 
 #[derive(Clone, Debug)]
-pub struct AppState {
+struct AppState {
     election_data: ElectionData,
     database: Arc<Mutex<model::DatabaseConnection>>,
     result: Option<ResultData>,
@@ -404,6 +404,16 @@ async fn open(req: HttpRequest, state: SharedState) -> impl Responder {
     HttpResponse::NoContent().finish()
 }
 
+async fn about(state: SharedState) -> impl Responder {
+    let state_lock = match state.read() {
+        Ok(lock) => lock,
+        Err(what) => {
+            return HttpResponse::InternalServerError().body(&format!("Mutex poisoned: {}", what))
+        }
+    };
+    html_interface::preprocess_page("about.html", (*state_lock).get_title())
+}
+
 #[actix_rt::main]
 async fn main() -> std::io::Result<()> {
     let app_state = Arc::new(RwLock::new(
@@ -424,7 +434,7 @@ async fn main() -> std::io::Result<()> {
             )
             .route("/vote", web::get().to(html_interface::vote))
             .route("/result", web::get().to(html_interface::result))
-            .route("/", web::get().to(html_interface::about))
+            .route("/", web::get().to(about))
     })
     .bind("127.0.0.1:8080")?
     .run()
