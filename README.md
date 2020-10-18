@@ -6,7 +6,6 @@ All the back-end code is written in safe Rust. This server uses the [Actix](http
 
 ## To-do list
 This list is ordered in order of perceived priority.
-* A manual HTML page introducing the voting system itself.
 * First-come-first-served verification that the election is open/closed.
 * Modify the election after it started.
 * Switch to a better graph displaying library, such as graphviz.

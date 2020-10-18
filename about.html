@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<head>
+    <title>About the Randomized Condorcet Voting System</title>
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <style type="text/css">
+        #graph-frame {
+            width: 800px;
+            height: 600px;
+            border: 1px solid lightgray;
+        }
+
+        table {
+            border-collapse: collapse;
+        }
+
+        table th, table td {
+            border: 1px solid darkgray;
+            padding: 0.5em;
+        }
+    </style>
+</head>
+<body>
+    <h1>The Randomized Condorcet Voting System</h1>
+    <p>
+        You are about to participate in an experimentation of the Randomized
+        Condorcet Voting System, a state-of-the-art electoral system that could
+        reform our existing electoral systems in a very positive way.
+    </p>
+    <p>
+        If you are here to vote instead, click <a href="/vote">here</a>. If you
+        are here to see the results, click <a href="/result">here</a>.
+    </p>
+
+    <h2>Why a new voting system?</h2>
+    <p>
+        Political shit flinging is nothing new, but it has been varying in ways
+        that are cause for great concern.
+        <ul>
+            <li>
+                <a href="https://www.pewresearch.org/politics/2014/06/12/political-polarization-in-the-american-public/">A
+                survey published by Pew Research in 2014</a> reveals that
+                Americans have become more and more polarized, holding more and
+                more consistently liberal or conservative opinions and having
+                more and more negative opinions of the opposite side. In other
+                words, nuance in people’s political opinions tends to vanish.
+                In fact, many American presidents from a few decades ago would
+                have looked like centrists by today’s standards.
+            </li>
+            <li>
+                <a href="https://www.politico.com/news/magazine/2020/10/01/political-violence-424157">An
+                article published on Politico in October 2020</a> raises
+                concern for the increasing share of both Democrat and
+                Republican voters who think the use of political violence
+                is justified.
+            </li>
+        </ul>
+        Although there are many ways to explain these trends, one particularly
+        convinced me: our electoral systems are fundamentally flawed in ways
+        that incentivize these kinds of behaviors.
+    </p>
+    <p>
+        It is difficult to be comprehensive about the many ways in which the
+        different electoral systems used around the world are flawed, but some
+        patterns are easy to notice:
+        <ul>
+            <li>
+                the United States electoral system only makes two parties
+                viable in the long run, which reinforces a political duopoly
+                between two parties that have little incentive to actually
+                serve the people who elect them;
+            </li>
+            <li>
+                despite being more allowing of small parties, the French
+                electoral system still doesn’t eliminate the high barrier
+                between large and small parties, and strategical voting is
+                still a matter of discussion almost every electoral cycle.
+            </li>
+        </ul>
+        There is no reason whatsoever for political parties to be elected for
+        their size rather than their ideas, and electors having to lie on their
+        ballot to maximize their chances sounds like it came from a dystopian
+        TV show. In the long run, it is not crazy at all to suspect these flaws
+        are at least partially behind the huge social problems described above.
+    </p>
+
+    <h2>A theory of electoral systems?</h2>
+    <p>
+        As strange as it sounds, there does exist a theory of electoral
+        systems, and in order to make it clear what a good electoral system is,
+        it is important to talk about it.
+    </p>
+    <p>
+        An <b>election</b> is a game in the sense of game theory. It involves a
+        finite number of players, called <b>electors</b>, who each make a
+        <b>decision</b> by casting their ballot, and the outcome of the game
+        depends on the decision of all players. To each possible outcome of the
+        game is assigned a <b>utility</b> value that is subjective to each
+        player and quantifies how satisfied that player is with that outcome.
+    </p>
+    <p>
+        More specifically, an election is a <b>simultaneous</b> game. This
+        means that electors make their decision not knowing the other electors’
+        decisions. Of course, electors may disclose whom they voted for, but:
+        <ul>
+            <li>they may lie;</li>
+            <li>it is not intrinsic to the act of voting.</li>
+        </ul>
+    </p>
+    <p>
+        In an electoral system, all electors are provided with a finite set of
+        <b>alternatives</b>, which is a more general term for candidate.
+        Through their ballots, they then specify their preferences in a format
+        that the electoral system allows. In a <b>uninominal</b> electoral
+        system, the ballot only contains one alternative. In an <b>ordinal</b>
+        electoral system, the ballot specifies a total order between the
+        alternatives.
+    </p>
+    <p>
+        In a game, players have to make decisions based on the information that
+        they have. Information may be:
+        <ul>
+            <li><b>public:</b> available to everyone;</li>
+            <li>
+                <b>private:</b> known only to one player who has the discretion
+                to disclose it or not (examples include what the player
+                believes or wants).
+            </li>
+        </ul>
+        A <b>strategy</b> is an algorithm that takes all the information a
+        player has access to and outputs a decision. A <b>deterministic</b>
+        strategy will always output the same decision given the same
+        information. In particular, it doesn’t involve randomness.
+    </p>
+    <p>
+        Many technical terms describe qualities we might expect from electoral
+        systems. The most interesting ones are described in the table below.
+        <table>
+            <tr><th>Quality</th><th>Meaning</th></tr>
+            <tr>
+                <td>Unanimity</td>
+                <td>
+                    If all electors specify that <i>A</i> is their favorite
+                    alternative, then <i>A</i> is necessarily elected.
+                </td>
+            </tr>
+            <tr>
+                <td>Majority</td>
+                <td>
+                    If more than half of the electors specify that <i>A</i> is
+                    their favorite alternative, then <i>A</i> is necessarily
+                    elected.
+                </td>
+            </tr>
+            <tr>
+                <td>Condorcet criterion</td>
+                <td>
+                    If there is a unique alternative <i>A</i> that is pairwise
+                    favored over all other alternatives by over half of the
+                    electors, then <i>A</i> is necessarily elected.
+                </td>
+            </tr>
+            <tr>
+                <td>Independence of irrelevant alternatives</td>
+                <td>
+                    The probability that the electoral system favors <i>A</i>
+                    over <i>B</i> cannot change by adding or removing a third,
+                    unrelated alternative.
+                </td>
+            </tr>
+            <tr>
+                <td>Strategyproofness</td>
+                <td>
+                    In order to maximize their expected utility, the best
+                    strategy electors have is to make sure their ballot
+                    truly reflects their preferences. In other words, lying on
+                    the ballot is always a sub-optimal strategy.
+                </td>
+            </tr>
+            <tr>
+                <td>Dictatorship</td>
+                <td>
+                    There is a particular elector, called <b>dictator</b>,
+                    whose ballot completely determines the outcome of the
+                    election. The dictator may not be statically defined.
+                </td>
+            </tr>
+            <tr>
+                <td>Lotocracy</td>
+                <td>
+                    A form of dictatorship where the dictator is chosen
+                    randomly. It essentially consists of picking one ballot
+                    randomly and choosing the outcome from it alone.
+                </td>
+            </tr>
+        </table>
+    </p>
+    <p>
+        Some immediate theorems:
+        <ul>
+            <li>Majority implies unanimity.</li>
+            <li>Condorcet criterion implies majority.</li>
+            <li>Dictatorship implies unanimity.</li>
+            <li>Lotocracy implies dictatorship.</li>
+            <li>Lotocracy implies independence of irrelevant alternatives.</li>
+            <li>Lotocracy implies strategyproofness.</li>
+        </ul>
+        It may seem surprising that lotocracy achieves both strategyproofness
+        and independence of irrelevant alternatives so easily, but the reason
+        is quite simple: relying entirely on luck closes the door to all forms
+        of strategies. However, lotocracy doesn’t achieve majority. If every
+        elector votes for <i>A</i> except one who votes for <i>B</i>, then
+        <i>B</i> has a nonzero chance of winning. Alternatives that most
+        electors are strongly against will be called <b>extreme</b> here.
+    </p>
+
+    <h2>Our electoral systems are terrible</h2>
+    <p>
+        The simplest voting system imaginable is the one-round uninominal
+        voting system. It is the one used in the United States (Electoral
+        College aside). This system trivially achieves majority. Yet, it fails
+        at independence of irrelevant alternatives. In 2016, as he was running
+        as an independent candidate, Bernie Sanders had to give up on his
+        campaign, for all his presence would have done was taking votes away
+        from Hillary Clinton. It is not unlikely that, had he not taken this
+        decision, Donald Trump would have won the popular vote as well as the
+        electoral one. Not only that, Bernie Sanders was incentivized to
+        express unconditional support for Hillary Clinton’s platform, even
+        ideas he strongly disagreed with. The slightest negative thing he would
+        have said could have profited the Republican platform in some way. Not
+        only had a candidate have to step back from the race, he also had to
+        lie, making it two different ways he didn’t defend his ideas. This
+        system also fails at strategyproofness in that small parties have very
+        little chance of winning the election. As a result, supporters of small
+        parties have to consider voting from “the least of two evils” and thus
+        lie on their ballot. This has the effect of feeding a party duopoly
+        that removes all incentive on the parties to serve the people, since
+        the barrier to entry of competing smaller parties is humongous.
+    </p>
+    <p>
+        In France, the electoral system used is also uninominal, but it has two
+        rounds so that the leading two parties of the first round face off in
+        the second one. If a party has the majority in the first round, then it
+        immediately wins, so this system achieves majority. However, it fails
+        at independence of irrelevant alternatives for the same reason as
+        before. Although there is no party duopoly, strategyproofness is still
+        an issue because if a party you hate is likely to pass the first round,
+        then it may be worth it not to vote for your party in favor of another
+        one that would be more likely to win in the second round. This becomes
+        more evident as the competition between second and third parties is
+        tight. In 2012,
+        <a href="https://fr.wikinews.org/wiki/%C3%89lection_pr%C3%A9sidentielle_fran%C3%A7aise_de_2012_:_Fran%C3%A7ois_Bayrou_vainqueur_au_second_tour_%3F">unofficial
+        statistics</a> proved that centrist candidate François Bayrou would
+        have beaten François Hollande in a face-off, yet he did not pass the
+        first round. This system elected a candidate that the people would
+        gladly replace by someone else if they had the opportunity. If fact,
+        <a href="https://images.math.cnrs.fr/Et-le-vainqueur-du-second-tour-est.html?lang=fr">this
+        article by Rémi Peyre</a> explains that François Bayrou would have
+        beaten any other candidate. Thus, this system fails at the Condorcet
+        criterion.
+    </p>
+    <p>
+        The Condorcet criterion is actually very important. Imagine that the
+        day after the election, a referendum is held to replace the winning
+        candidate with François Bayrou. No matter who that candidate may have
+        been, the people would approve the proposition. There is evidently some
+        kind of unstability that the electoral system did not take into
+        account, and this led a blatantly sub-optimal candidate into office.
+        In fact, the winner of the election, François Hollande, finished his
+        term with an
+        <a href="https://d25d2506sfb94s.cloudfront.net/cumulus_uploads/document/hrrywlepkk/Results%20for%20Huffington%20Post%20(Barom%C3%A8tre)%20057%20270417_%20As_Sent.pdf">approval
+        rate of 17%</a> and is, as of 2020, the only French president who
+        didn’t bother running for reelection since at least 1958.
+    </p>
+
+    <h2>What about these alternatives?</h2>
+    <p>
+        Several alternatives are frequently proposed to the usual electoral
+        systems. This section will explain their typical flaws.
+    </p>
+
+    <h3>Instant-runoff voting</h3>
+    <p>
+        This is an ordinal system where the electors’ first choices are used in
+        a uninominal fashion. If a candidate has the majority, they win.
+        Otherwise, the last candidate is eliminated, and another uninominal
+        election is simulated with the remaining candidates until someone has
+        the majority. Although this system is quite robust, it still provably
+        fails at strategyproofness. Tactical voting would consist of choosing
+        the order of eliminations wisely.
+    </p>
+
+    <h3>Score voting</h3>
+    <p>
+        The idea of this system is that you give each candidate a score, and
+        the candidate with the best total score wins. In reality, the optimal
+        strategy in this system is to give your favorite candidate the maximum
+        score and zero to everyone else. We fall back to a uninominal electoral
+        system.
+    </p>
+
+    <h3>Borda count</h3>
+    <p>
+        In this ordinal system, electors give each candidate <i>n</i> −
+        <i>k</i> − 1 points where <i>k</i> refers to the rank of that candidate
+        on the ballot. In this way, the top-ranked candidate gets <i>n</i> − 1
+        points while the last one gets zero. A variant starts at 1 instead of
+        0. The problem is that if your favorite candidate <i>A</i> is likely to
+        lose against a candidate <i>B</i>, it may be viable to insincerely put
+        <i>B</i> at the bottom of your ballot. The Borda count thus fails at
+        strategyproofness.
+    </p>
+
+    <h3>Majority judgement</h3>
+    <p>
+        This one is actually not too bad. It consists of giving appreciations
+        to candidates (<i>e.g.</i> very good, good, mixed, bad, very bad). If
+        a candidate has the best median appreciation, they win. Otherwise,
+        there are several ways to break ties.
+    </p>
+
+    <h2>The two impossibility theorems</h2>
+    <p>
+        As it turns out, two theorems seriously get in the way of having ideal
+        electoral systems.
+        <ul>
+            <li>
+                <b>Arrow’s impossibility theorem:</b>
+                No ordinal electoral system can achieve both unanimity and
+                independence of irrelevant alternatives without being a
+                dictatorship.
+            </li>
+            <li>
+                <b>Gibbard’s theorem:</b>
+                No electoral system can achieve strategyproofness for more than
+                two alternatives without being a dictatorship.
+            </li>
+        </ul>
+        Although Arrow’s theorem can be worked around by using non-ordinal
+        electoral systems, Gibbard’s theorem applies to all electoral systems.
+        It is therefore pointless to look for perfect electoral systems.
+        Instead, the hunt should go toward systems that are too unpredictable
+        to willingly manipulate in a particular direction.
+    </p>
+
+    <h2>The Randomized Condorcet Voting System</h2>
+    <p>
+        This last section details the electoral system that convinced me the
+        most. It’s biggest strengths are that it is provably strategyproof in
+        some cases and that it is made difficult to predict in other cases due
+        to randomness.
+    </p>
+
+    <h3>The Condorcet method</h3>
+    <p>
+        The Condorcet method was an unsuccessful attempt by Nicolas de
+        Condorcet at making the most natural electoral system that would
+        achieve the Condorcet criterion. Although it initially failed, recent
+        advances in game theory allowed to generalize it in a way that makes it
+        a lot more useful.
+    </p>
+
+    <h4>Ballots</h4>
+    <p>
+        There are several ways ballots can be formed, but the idea is to
+        organize duels between alternatives. In the most general form, the
+        ballot is a grid where rows and columns are alternatives and the
+        elector has to specify who is better on each square. Of course, this
+        first approach is very wrong, but we can improve upon it. We call the
+        <b>complexity</b> of a ballot the maximum amount of information the
+        elector has to specify to fill it as a function of the number of
+        alternatives <i>n</i>. It is not equal to the total number of valid
+        ballots. This first grid ballot has a complexity of
+        <i>n</i><sup>2</sup>.
+    </p>
+    <p>
+        The first improvement comes from the fact that one cannot prefer an
+        alternative over itself. This property is known as
+        <b>irreflexivity</b>. This excludes the diagonal in the grid. The
+        complexity falls down to <i>n</i> (<i>n</i> − 1).
+    </p>
+    <p>
+        The second improvement comes from the fact that from two alternatives
+        <i>A</i> and <i>B</i>, one cannot simultaneously prefer <i>A</i> over
+        <i>B</i> and <i>B</i> over <i>A</i>. This property is known as
+        <b>antisymmetry</b>. This cuts the grid in half. The complexity falls
+        down to <i>n</i> (<i>n</i> − 1) ÷ 2.
+    </p>
+    <p>
+        The last improvement comes from the fact that if, from three
+        alternatives <i>A</i>, <i>B</i> and <i>C</i>, a same elector prefers
+        <i>A</i> over <i>B</i> and <i>B</i> over <i>C</i>, then they prefer
+        <i>A</i> over <i>C</i>. This property is known as <b>transitivity</b>
+        and is one of the Von Neumann−Morgenstern axioms for rational behavior.
+        Intuitively it may be possible to still prefer <i>C</i> over <i>A</i>,
+        but the cyclical preferences that this entails are irrational and may
+        be exploited for scams. A grid is no longer suited for this type of
+        ballot. Instead, we will use ranges of ranks. The elector gives each
+        alternative a range [<i>a</i>, <i>b</i>] of ranks. If the ranges of
+        two alternatives overlap, they are considered equal, otherwise the one
+        with greater ranges is considered better. This makes the complexity
+        drop down to 2 <i>n</i> which scales a lot better than the previous
+        ones. It is also still intuitive and leaves room for leaving
+        alternatives unranked.
+    </p>
+
+    <h4>Condorcet winners</h4>
+    <p>
+        The goal of the Condorcet method is to find a <b>Condorcet winner</b>,
+        that is an alternative that either ties or wins against all other ones.
+        Conceptually, a directed graph called a <b>duel graph</b> represents
+        all duels in the following way:
+        <ul>
+            <li>
+                the vertices correspond to alternatives;
+            </li>
+            <li>
+                between two alternatives <i>A</i> and <i>B</i>, if more
+                electors prefer <i>A</i> over <i>B</i> than the opposite, then
+                the duel graph contains an arrow from <i>A</i> to <i>B</i>;
+            </li>
+            <li>
+                alternatives that tie have no arrow between them.
+            </li>
+        </ul>
+        On such a graph, a Condorcet winner is given by a vertex that has no
+        incoming arrow.
+    </p>
+    <p>
+        Unfortunately, the Condorcet winner is not always unique, nor does it
+        always exist. Imagine an election between three alternatives <i>A</i>,
+        <i>B</i> and <i>C</i> where a third of electors prefer <i>A</i> over
+        <i>B</i> over <i>C</i>, a third prefer <i>B</i> over <i>C</i> over
+        <i>A</i>, and a third prefer <i>C</i> over <i>A</i> over <i>B</i>. The
+        resulting duel graph is cyclical although the individual preferences
+        weren’t. It also has no Condorcet winner. This particular situation is
+        commonly called the <b>Condorcet paradox</b> and was the major reason
+        why the Condorcet method originally failed: even in the absence of ties
+        between two alternatives, the Condorcet method as originally designed
+        can fail at electing a winner.
+    </p>
+
+    <h3>The gold nugget of randomization</h3>
+    <p>
+        Fortunately, mathematics made huge progress since Condorcet’s days.
+        The cyclical graph in the Condorcet paradox should remind you of
+        something: it is equivalent to the graph explaining the rules of
+        rock paper scissors. Now think outside the box: how do you win at
+        rock paper scissors? Sure, there are
+        <a href="https://en.wikipedia.org/wiki/Rock_paper_scissors#Strategies">strategies
+        based on human player biases</a>, but ultimately, no strategy can do
+        better than a player who plays completely randomly. We will apply
+        similar principles to decide an optimal strategy on a generalized
+        rock paper scissors game based on our duel graph and deduce a
+        probability distribution from which to choose the winner.
+    </p>
+    <p>
+        Formally, by generalized rock paper scissors game, we mean any
+        2-player, zero-sum, simultaneous game whose outcomes are either a tie
+        or a win−lose with the same utility payoffs in all win−lose outcomes.
+        A <b>zero-sum</b> game means that the total utility gained by the
+        winners is always equal to the total utility lost by the losers. The
+        other terms are either defined above or self-explanatory. Then, we
+        define <b>mixed strategies</b> as strategies that choose a decision
+        randomly, not necessarily according to a uniform probability
+        distribution. Through mathematical wizardry that is beyond the scope
+        of this text, it is possible to show that maximizing one’s expected
+        payoff is equivalent to solving a certain
+        <a href="https://en.wikipedia.org/wiki/Linear_programming">linear
+        program</a> which can be done with the simplex algorithm or any other
+        linear solver.
+    </p>
+    <p>
+        All of this work results in the Randomized Condorcet Voting System
+        (RCVS). It may be difficult to understand all the mathematics behind
+        it, but the next section will detail why its use is more than worth it.
+    </p>
+
+    <h3>So how good is it?</h3>
+    <p>
+        Now to examine the theoretical properties of the RCVS.
+        <ul>
+            <li>
+                <b>Condorcet criterion:</b>
+                Being a generalization of the Condorcet method, the RCVS
+                trivially achieves the Condorcet criterion. Then, it also
+                achieves majority and unanimity.
+            </li>
+            <li>
+                <b>Independence of irrelevant alternatives:</b>
+                Since the ballots are not total orders, the RCVS is not subject
+                to Arrow’s impossibility theorem. In 1997, Jean-François
+                Laslier
+                <a href="https://www.springer.com/gp/book/9783642645617">proved</a>
+                that if an alternative is outside the domain of the election’s
+                optimal strategy, then removing it will not change the optimal
+                strategy.
+            </li>
+            <li>
+                <b>Strategyproofness:</b>
+                Gibbard’s theorem states that this property is unreachable in
+                general cases, but it doesn’t rule out getting close to it.
+                All Condorcet methods are strategyproof in the special case
+                where more than half the electors have the same favorite
+                alternative. The RCVS also achieves strategyproofness in the
+                slightly more general case where a unique Condorcet winner
+                exists (the difference is subtle, but you can picture some
+                electors each preferring a different irrelevant candidate over
+                <i>A</i> and agregate it in a way that <i>A</i> is still a
+                Condorcet winner). Lê Nguyên Hoang
+                <a href="http://www.science4all.org/wp-content/uploads/RandomizedCondorcet.pdf">proved</a>
+                that this property is very rare in the sense that any electoral
+                system that achieves this property will behave the same as the
+                RCVS in many cases.
+            </li>
+            <li>
+                <b>Extreme-proofness:</b>
+                The RCVS will never elect an extreme alternative, meaning an
+                alternative that a majority of electors are strongly against.
+                This is a very good property whose lack was the best argument
+                against lotocracy.
+            </li>
+        </ul>
+    </p>
+
+    <h3>What about the Electoral College?</h3>
+    <p>
+        Although the RCVS isn’t incompatible with an Electoral College, as far
+        as I know, there is currently no theoretical inquiry on what properties
+        could be achieved with it. Personally, I did implement features in my
+        code that could be used to simulate an Electoral College, but I would
+        advise against its use until that work is done.
+    </p>
+
+    <h2>Are you ready to vote?</h2>
+    <p>Then hop in, and cast your ballot to decide in:</p>
+    <div style="text-align: center; font-size: xx-large;">
+        <a href="/vote">$NAME</a>
+    </div>
+    <p>Or see the result <a href="/result">here</a>.</p>
+</body>

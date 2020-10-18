@@ -69,7 +69,7 @@ struct ResultData {
 }
 
 #[derive(Clone, Debug)]
-struct AppState {
+pub struct AppState {
     election_data: ElectionData,
     database: Arc<Mutex<model::DatabaseConnection>>,
     result: Option<ResultData>,
@@ -95,6 +95,10 @@ impl AppState {
 
     fn is_open(&self) -> bool {
         self.result.is_none()
+    }
+
+    fn get_title(&self) -> &str {
+        &self.election_data.title
     }
 }
 
@@ -420,6 +424,7 @@ async fn main() -> std::io::Result<()> {
             )
             .route("/vote", web::get().to(html_interface::vote))
             .route("/result", web::get().to(html_interface::result))
+            .route("/", web::get().to(html_interface::about))
     })
     .bind("127.0.0.1:8080")?
     .run()
