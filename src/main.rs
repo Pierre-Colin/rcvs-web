@@ -3,7 +3,7 @@ use std::fmt;
 use std::fs::File;
 use std::io::BufReader;
 use std::mem;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use rand::{RngCore, SeedableRng};
@@ -102,7 +102,7 @@ impl AppState {
     }
 }
 
-type SharedState = web::Data<Arc<RwLock<AppState>>>;
+type SharedState = web::Data<Arc<qlock::RwLock<AppState>>>;
 
 async fn get_info(req: HttpRequest, state: SharedState) -> impl Responder {
     let ip = match req.peer_addr() {
@@ -416,7 +416,7 @@ async fn about(state: SharedState) -> impl Responder {
 
 #[actix_rt::main]
 async fn main() -> std::io::Result<()> {
-    let app_state = Arc::new(RwLock::new(
+    let app_state = Arc::new(qlock::RwLock::new(
         AppState::new("election.json").expect("Failed to initialize application state"),
     ));
     HttpServer::new(move || {

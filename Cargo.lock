@@ -1291,6 +1291,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "qlock"
+version = "0.1.0"
+source = "git+https://github.com/Pierre-Colin/qlock?branch=main#e241c724e95ff3e61f1deca078f275e3fb7d66e9"
+
+[[package]]
 name = "quick-error"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1387,6 +1392,7 @@ dependencies = [
  "actix-rt",
  "actix-web",
  "mime",
+ "qlock",
  "rand",
  "rand_pcg",
  "rcvs",
